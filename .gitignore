@@ -13,6 +13,10 @@ dist-ssr
 dev-dist
 *.local
 
+# Personal data — hevy-import.mjs input/output
+workout_data.csv
+hevy-import-output.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
