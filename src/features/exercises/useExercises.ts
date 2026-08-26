@@ -29,6 +29,14 @@ export function useExercise(id: string | undefined) {
   }, [id])
 }
 
+/** All exercises, keyed by id — for features that need to resolve many exerciseIds at once (routines, history, analytics). */
+export function useExerciseById(): Map<string, Exercise> | undefined {
+  return useLiveQuery(async () => {
+    const exercises = await db.exercises.toArray()
+    return new Map(exercises.map((exercise) => [exercise.id, exercise]))
+  }, [])
+}
+
 export async function createCustomExercise(
   input: Omit<Exercise, 'id' | 'isCustom'>,
 ): Promise<string> {

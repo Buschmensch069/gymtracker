@@ -9,6 +9,10 @@ interface WeightRepsInputProps {
   inputMode?: 'numeric' | 'decimal'
   min?: number
   boxWidthClass?: string
+  /** Whether `value` is a real user-entered number. When false, `placeholder` (if given) is shown greyed out instead. */
+  touched?: boolean
+  /** Last session's value for this field, shown as greyed placeholder text while untouched. */
+  placeholder?: number
 }
 
 /**
@@ -24,10 +28,18 @@ export function WeightRepsInput({
   inputMode = 'numeric',
   min = 0,
   boxWidthClass = 'w-16',
+  touched = true,
+  placeholder,
 }: WeightRepsInputProps) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+
+  const showPlaceholder = !touched && placeholder !== undefined
+  // The base a +/- tap or a tap-to-edit starts from — the last-session value
+  // while untouched (so the first interaction nudges/confirms it, rather
+  // than starting from the 0 default), the real stored value once touched.
+  const base = showPlaceholder ? placeholder : value
 
   useEffect(() => {
     if (editing) {
@@ -36,7 +48,7 @@ export function WeightRepsInput({
   }, [editing])
 
   const startEditing = () => {
-    setDraft(formatValue(value, decimals))
+    setDraft(formatValue(base, decimals))
     setEditing(true)
   }
 
@@ -53,7 +65,7 @@ export function WeightRepsInput({
     setEditing(false)
   }
 
-  const clampedStep = (delta: number) => onChange(Math.max(min, round(value + delta)))
+  const clampedStep = (delta: number) => onChange(Math.max(min, round(base + delta)))
 
   return (
     <div className="flex items-center gap-1">
@@ -71,15 +83,17 @@ export function WeightRepsInput({
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
           onKeyDown={(e) => e.key === 'Enter' && commit()}
-          className={`h-11 ${boxWidthClass} rounded-xl border border-cyan-500 bg-slate-900 text-center font-mono text-xl tabular-nums text-slate-100 focus:outline-none`}
+          className={`h-11 ${boxWidthClass} rounded-xl border border-accent bg-surface-1 text-center font-mono text-xl tabular-nums text-slate-100 focus:outline-none`}
         />
       ) : (
         <button
           type="button"
           onClick={startEditing}
-          className={`h-11 ${boxWidthClass} rounded-xl bg-slate-900 text-center font-mono text-xl tabular-nums text-slate-100`}
+          className={`h-11 ${boxWidthClass} rounded-xl bg-surface-1 text-center font-mono text-xl tabular-nums ${
+            showPlaceholder ? 'text-slate-600' : 'text-slate-100'
+          }`}
         >
-          {formatValue(value, decimals)}
+          {formatValue(base, decimals)}
         </button>
       )}
 

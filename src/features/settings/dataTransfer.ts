@@ -46,6 +46,10 @@ export function downloadExport(payload: GymTrackerExport): void {
   URL.revokeObjectURL(url)
 }
 
+export async function recordExportTimestamp(): Promise<void> {
+  await db.settings.put({ key: 'lastExportedAt', value: Date.now() })
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }

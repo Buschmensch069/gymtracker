@@ -9,9 +9,9 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variantClasses: Record<Variant, string> = {
-  primary: 'bg-cyan-500 text-slate-950 active:bg-cyan-400',
-  secondary: 'bg-slate-800 text-slate-100 active:bg-slate-700',
-  ghost: 'bg-transparent text-slate-300 active:bg-slate-800',
+  primary: 'bg-accent text-accent-fg active:opacity-80',
+  secondary: 'bg-surface-2 text-slate-100 active:bg-surface-2/70',
+  ghost: 'bg-transparent text-slate-300 active:bg-surface-2',
   danger: 'bg-red-600 text-white active:bg-red-500',
 }
 

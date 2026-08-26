@@ -1,16 +1,22 @@
 import { useState } from 'react'
+import { Navigate } from 'react-router-dom'
+import { NotebookPen } from 'lucide-react'
 import { PageHeader } from '../../components/layout/PageHeader'
 import { Button } from '../../components/ui/Button'
 import { EmptyState } from '../../components/ui/EmptyState'
+import { Sheet } from '../../components/ui/Sheet'
+import { Textarea } from '../../components/ui/Textarea'
 import { useUnitPreference } from '../../hooks/useSettings'
 import { formatDuration } from '../../lib/dates'
-import { AddExerciseToWorkoutSheet } from './AddExerciseToWorkoutSheet'
+import { db } from '../../db/schema'
+import { ExercisePickerSheet } from '../exercises/ExercisePickerSheet'
 import { SetLogRow } from './SetLogRow'
 import {
+  addExerciseToWorkout,
   addSet,
+  discardWorkout,
   finishWorkout,
   removeExerciseFromWorkout,
-  startWorkout,
   useActiveWorkout,
   useWorkoutExercises,
 } from './useActiveWorkout'
@@ -20,20 +26,22 @@ export function ActiveWorkoutPage() {
   const [unit] = useUnitPreference()
   const workoutExercises = useWorkoutExercises(activeWorkout?.id)
   const [showAddExercise, setShowAddExercise] = useState(false)
+  const [showNotes, setShowNotes] = useState(false)
 
   if (activeWorkout === undefined) return null
 
+  // No standalone empty state here anymore — starting a workout (empty or
+  // from a routine) happens on the Workouts tab; this route only exists
+  // while a workout is actually in progress.
   if (activeWorkout === null) {
-    return (
-      <div className="flex h-full flex-col overflow-hidden">
-        <PageHeader title="Workout" />
-        <EmptyState
-          title="No workout in progress"
-          message="Start an empty workout and add exercises as you go."
-          action={<Button onClick={() => startWorkout()}>Start Empty Workout</Button>}
-        />
-      </div>
-    )
+    return <Navigate to="/workouts" replace />
+  }
+
+  const handleDiscard = () => {
+    if (!confirm('Discard this workout? All exercises and sets logged so far will be deleted. This cannot be undone.')) {
+      return
+    }
+    discardWorkout(activeWorkout.id)
   }
 
   return (
@@ -41,11 +49,26 @@ export function ActiveWorkoutPage() {
       <PageHeader
         title="Workout"
         action={
-          <span className="text-sm text-slate-500">{formatDuration(activeWorkout.startedAt)}</span>
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-sm tabular-nums text-slate-500">
+              {formatDuration(activeWorkout.startedAt)}
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowNotes(true)}
+              aria-label="Workout notes"
+              className={activeWorkout.notes ? 'text-accent' : 'text-slate-500'}
+            >
+              <NotebookPen size={20} />
+            </button>
+            <button type="button" onClick={handleDiscard} className="text-sm text-red-400">
+              Discard
+            </button>
+          </div>
         }
       />
 
-      <div className="flex-1 overflow-y-auto pb-4">
+      <div className="flex-1 scroll-touch pb-4">
         {workoutExercises?.length === 0 && (
           <EmptyState title="No exercises yet" message="Tap Add Exercise to get started." />
         )}
@@ -68,7 +91,7 @@ export function ActiveWorkoutPage() {
             <button
               type="button"
               onClick={() => addSet(we.id)}
-              className="mx-4 mt-1 min-h-11 rounded-xl border border-dashed border-slate-700 px-4 text-sm text-slate-400 active:bg-slate-900"
+              className="mx-4 mt-1 min-h-11 rounded-xl border border-dashed border-border px-4 text-sm text-slate-400 active:bg-surface-1"
             >
               + Add Set
             </button>
@@ -76,7 +99,7 @@ export function ActiveWorkoutPage() {
         ))}
       </div>
 
-      <div className="flex shrink-0 gap-2 border-t border-slate-800 px-4 py-3 pb-safe">
+      <div className="flex shrink-0 gap-2 border-t border-border px-4 py-3 pb-safe">
         <Button variant="secondary" fullWidth onClick={() => setShowAddExercise(true)}>
           Add Exercise
         </Button>
@@ -86,10 +109,27 @@ export function ActiveWorkoutPage() {
       </div>
 
       {showAddExercise && (
-        <AddExerciseToWorkoutSheet
-          workoutId={activeWorkout.id}
+        <ExercisePickerSheet
+          onPick={async (exerciseId) => {
+            await addExerciseToWorkout(activeWorkout.id, exerciseId)
+            setShowAddExercise(false)
+          }}
           onClose={() => setShowAddExercise(false)}
         />
+      )}
+
+      {showNotes && (
+        <Sheet title="Workout Notes" onClose={() => setShowNotes(false)}>
+          <div className="p-4">
+            <Textarea
+              className="min-h-40"
+              autoFocus
+              defaultValue={activeWorkout.notes}
+              placeholder="How did it feel? Anything to remember for next time?"
+              onBlur={(e) => db.workouts.update(activeWorkout.id, { notes: e.target.value })}
+            />
+          </div>
+        </Sheet>
       )}
     </div>
   )

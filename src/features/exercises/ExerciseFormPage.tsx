@@ -3,6 +3,9 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { PageHeader } from '../../components/layout/PageHeader'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
+import { Textarea } from '../../components/ui/Textarea'
+import { Chip } from '../../components/ui/Chip'
+import { MUSCLE_COLORS } from '../../lib/muscleColors'
 import {
   PRIMARY_MUSCLES,
   MUSCLE_LABELS,
@@ -72,14 +75,14 @@ function ExerciseFormFields({ id, existing }: { id: string | undefined; existing
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <PageHeader title={isEdit ? 'Edit Exercise' : 'New Exercise'} />
-      <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4">
+      <div className="flex-1 scroll-touch space-y-5 px-4 py-4">
         <Field label="Name">
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Exercise name" />
         </Field>
 
         <Field label="Primary muscle">
           <select
-            className="min-h-11 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 text-slate-100"
+            className="min-h-11 w-full rounded-xl border border-border bg-surface-1 px-3 text-slate-100"
             value={primaryMuscle}
             onChange={(e) => setPrimaryMuscle(e.target.value as PrimaryMuscle)}
           >
@@ -94,25 +97,20 @@ function ExerciseFormFields({ id, existing }: { id: string | undefined; existing
         <Field label="Secondary muscles">
           <div className="flex flex-wrap gap-2">
             {PRIMARY_MUSCLES.filter((m) => m !== primaryMuscle).map((m) => (
-              <button
+              <Chip
                 key={m}
-                type="button"
+                label={MUSCLE_LABELS[m]}
+                color={MUSCLE_COLORS[m]}
+                active={secondaryMuscles.includes(m)}
                 onClick={() => toggleSecondary(m)}
-                className={`rounded-full px-3 py-2 text-sm ${
-                  secondaryMuscles.includes(m)
-                    ? 'bg-cyan-500 text-slate-950'
-                    : 'bg-slate-800 text-slate-300'
-                }`}
-              >
-                {MUSCLE_LABELS[m]}
-              </button>
+              />
             ))}
           </div>
         </Field>
 
         <Field label="Equipment">
           <select
-            className="min-h-11 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 text-slate-100"
+            className="min-h-11 w-full rounded-xl border border-border bg-surface-1 px-3 text-slate-100"
             value={equipment}
             onChange={(e) => setEquipment(e.target.value as Equipment)}
           >
@@ -125,8 +123,8 @@ function ExerciseFormFields({ id, existing }: { id: string | undefined; existing
         </Field>
 
         <Field label="Notes">
-          <textarea
-            className="min-h-24 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none"
+          <Textarea
+            className="min-h-24"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             placeholder="Optional notes"

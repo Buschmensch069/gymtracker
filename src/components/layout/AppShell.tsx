@@ -1,5 +1,6 @@
 import { Outlet } from 'react-router-dom'
 import { useVisualViewportHeight } from '../../hooks/useVisualViewportOffset'
+import { ActiveWorkoutBanner } from '../../features/workout/ActiveWorkoutBanner'
 import { BottomTabBar } from './BottomTabBar'
 
 export function AppShell() {
@@ -16,6 +17,7 @@ export function AppShell() {
       <div className="flex flex-1 flex-col overflow-hidden">
         <Outlet />
       </div>
+      <ActiveWorkoutBanner />
       <BottomTabBar />
     </div>
   )

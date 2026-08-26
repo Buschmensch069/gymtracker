@@ -1,3 +1,5 @@
+import { Chip } from '../../components/ui/Chip'
+import { MUSCLE_COLORS } from '../../lib/muscleColors'
 import { PRIMARY_MUSCLES, MUSCLE_LABELS, type PrimaryMuscle } from '../../db/types'
 
 interface MuscleFilterBarProps {
@@ -13,24 +15,11 @@ export function MuscleFilterBar({ value, onChange }: MuscleFilterBarProps) {
         <Chip
           key={muscle}
           label={MUSCLE_LABELS[muscle]}
+          color={MUSCLE_COLORS[muscle]}
           active={value === muscle}
           onClick={() => onChange(muscle)}
         />
       ))}
     </div>
-  )
-}
-
-function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`shrink-0 rounded-full px-4 py-2 text-sm font-medium whitespace-nowrap ${
-        active ? 'bg-cyan-500 text-slate-950' : 'bg-slate-800 text-slate-300'
-      }`}
-    >
-      {label}
-    </button>
   )
 }

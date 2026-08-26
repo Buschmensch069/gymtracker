@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Button } from '../../components/ui/Button'
-import { downloadExport, exportAllData } from './dataTransfer'
+import { downloadExport, exportAllData, recordExportTimestamp } from './dataTransfer'
 
 export function ExportDataButton() {
   const [busy, setBusy] = useState(false)
@@ -10,6 +10,7 @@ export function ExportDataButton() {
     try {
       const payload = await exportAllData()
       downloadExport(payload)
+      await recordExportTimestamp()
     } finally {
       setBusy(false)
     }

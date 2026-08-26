@@ -1,28 +1,28 @@
 import { useState } from 'react'
 import { Sheet } from '../../components/ui/Sheet'
 import { Input } from '../../components/ui/Input'
-import { MuscleFilterBar } from '../exercises/MuscleFilterBar'
-import { useExerciseList } from '../exercises/useExercises'
+import { MuscleFilterBar } from './MuscleFilterBar'
+import { useExerciseList } from './useExercises'
 import { MUSCLE_LABELS, type PrimaryMuscle } from '../../db/types'
-import { addExerciseToWorkout } from './useActiveWorkout'
 
-interface AddExerciseToWorkoutSheetProps {
-  workoutId: string
+interface ExercisePickerSheetProps {
+  title?: string
+  onPick: (exerciseId: string) => void
   onClose: () => void
 }
 
-export function AddExerciseToWorkoutSheet({ workoutId, onClose }: AddExerciseToWorkoutSheetProps) {
+/**
+ * Shared exercise-search sheet — reused for adding exercises to an active
+ * workout, building a routine, and picking an exercise for Analytics charts.
+ * The caller decides what "picking" an exercise means via `onPick`.
+ */
+export function ExercisePickerSheet({ title = 'Add Exercise', onPick, onClose }: ExercisePickerSheetProps) {
   const [search, setSearch] = useState('')
   const [muscle, setMuscle] = useState<PrimaryMuscle | null>(null)
   const exercises = useExerciseList(search, muscle)
 
-  const handlePick = async (exerciseId: string) => {
-    await addExerciseToWorkout(workoutId, exerciseId)
-    onClose()
-  }
-
   return (
-    <Sheet title="Add Exercise" onClose={onClose}>
+    <Sheet title={title} onClose={onClose}>
       <div className="px-4 pt-3">
         <Input
           type="search"
@@ -40,8 +40,8 @@ export function AddExerciseToWorkoutSheet({ workoutId, onClose }: AddExerciseToW
           <button
             key={exercise.id}
             type="button"
-            onClick={() => handlePick(exercise.id)}
-            className="flex min-h-14 w-full items-center justify-between border-b border-slate-800 px-4 py-3 text-left active:bg-slate-900"
+            onClick={() => onPick(exercise.id)}
+            className="flex min-h-14 w-full items-center justify-between border-b border-border px-4 py-3 text-left active:bg-surface-1"
           >
             <div>
               <p className="font-medium text-slate-100">{exercise.name}</p>

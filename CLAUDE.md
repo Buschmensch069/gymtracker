@@ -12,7 +12,12 @@ Home Screen". All persistence is local, in IndexedDB via Dexie.
   helpers, etc.) are declared directly in `src/index.css` with `@utility`.
 - **Dexie.js** (IndexedDB) — the only datastore. No Redux/Zustand/React Query.
 - **vite-plugin-pwa** — service worker + web app manifest.
-- **Recharts** — for charts (later phase; not used in Phase 1).
+- **Recharts** — Analytics tab charts (weekly muscle sets, e1RM trend,
+  tonnage, consistency).
+- **lucide-react** — the only icon set. Don't hand-roll inline SVG icons.
+- **@dnd-kit/core + @dnd-kit/sortable** — drag-to-reorder for routine
+  exercises (`RoutineExerciseRow.tsx`). Not used anywhere else; reach for it
+  again before adding a second drag-and-drop dependency.
 - **React Router** — client-side routing, bottom-tab app shell.
 - Deploy target: **Vercel**.
 
@@ -61,6 +66,8 @@ WorkoutExercise {
 SetLog {
   id: string
   workoutExerciseId: string
+  exerciseId: string   // denormalized from workoutExercises — see below
+  workoutId: string    // denormalized from workoutExercises — see below
   setNumber: number
   weightKg: number   // always stored in kg regardless of display unit
   reps: number
@@ -68,18 +75,53 @@ SetLog {
   type: 'warmup' | 'normal' | 'dropset' | 'failure'
   completed: boolean
   timestamp: number  // epoch ms, when the set was logged/completed
+  touched?: boolean  // has the user entered a real value? see below
 }
 
 Setting {
-  key: string          // 'unitPreference' | 'seedVersion' | ...
+  key: string          // 'unitPreference' | 'seedVersion' | 'lastExportedAt' |
+                        // 'persistentStorageRequested' | 'persistentStorageGranted' | ...
   value: unknown
 }
 ```
 
-**Routine is schema-only in Phase 1.** The table exists for forward
-compatibility but there is no create/edit/start-from-routine UI yet, and
-`Workout.routineId` is always `undefined`. Don't build routine UI unless
-explicitly asked.
+**Denormalized fields on SetLog.** `exerciseId` and `workoutId` duplicate
+what's already derivable via `workoutExerciseId` → `WorkoutExercise`. They're
+denormalized on purpose: Phase 2 charts need queries like "every set ever
+logged for exercise X" or "every set in workout Y" across potentially
+thousands of rows, and without these fields that's a multi-hop join
+(`setLogs` → `workoutExercises` → filter) for every chart render. With them,
+it's a single indexed `db.setLogs.where('exerciseId').equals(x)` lookup.
+Always keep them in sync when creating a `SetLog` (see `addSet` in
+`useActiveWorkout.ts`) — there's no automatic referential integrity in Dexie,
+so a set created without populating these breaks chart queries for that row
+until a migration backfills it.
+
+**SetLog.touched** — whether the user has directly entered a weight/reps
+value for this set. `0` is a legitimate real value (bodyweight exercises),
+so it can't double as an "unset" sentinel — `touched` is what
+`SetLogRow`/`WeightRepsInput` use to decide whether to show the
+last-session placeholder instead of the stored number. `addSet`
+(`useActiveWorkout.ts`) sets it to `last?.touched ?? false` on a new row: a
+truly first set is untouched; a set carrying forward an already-touched
+value inherits `touched: true` immediately (it already shows a real
+number). Sets created back-to-back with nothing real yet — e.g.
+`startWorkoutFromRoutine`'s pre-populate loop — chain that `?? false`
+through and all stay untouched, with no special-casing needed.
+`updateSet` flips it to `true` the moment `weightKg`/`reps` change, or a
+set is marked `completed`. It's a plain **non-indexed** field, so per the
+Dexie Schema Migrations rules below it needed no `version()` bump. Rows
+from before this field existed have `touched === undefined` — every read
+site treats that as `touched ?? true` (old logged data is real, never
+placeholder-eligible).
+
+**Routines** (`Routine`/`RoutineExercise`) are fully built out: create,
+edit, delete, reorder exercises via drag (`features/routines/`). "Start
+Routine" calls `startWorkoutFromRoutine(routineId)`
+(`useActiveWorkout.ts`), which sets `Workout.routineId`, adds each routine
+exercise in order, then calls the existing `addSet` `targetSets` times per
+exercise to pre-populate empty (untouched) set rows — no separate
+set-creation path for routine-started workouts.
 
 **Units:** `weightKg` is the canonical stored unit, always. The kg/lb toggle
 in Settings (`settings` table, key `unitPreference`) only affects display
@@ -99,6 +141,32 @@ weight in lb.
   `db.workouts` where `finishedAt` is `undefined`. This means killing the
   app mid-workout and relaunching naturally resumes it — don't add a
   separate "current workout id" flag anywhere.
+- **Dexie excludes `undefined`-valued fields from indexes entirely** (this
+  is an IndexedDB limitation, not a Dexie choice — `undefined` isn't a
+  valid IndexedDB key). A row whose indexed `finishedAt` is `undefined`
+  simply isn't in that index at all. That means the active-workout lookup
+  **must** use `db.workouts.filter((w) => w.finishedAt === undefined)`,
+  never `db.workouts.where('finishedAt').equals(undefined)` — the latter
+  can't match anything, since unset rows were never indexed in the first
+  place. `where()` on `finishedAt` is still fine (and indexed) for queries
+  where the value **is** set, e.g. history's `finishedAt !== undefined`
+  filter or a future "workouts finished after date X" query. Same
+  reasoning is why `isCustom` (a boolean) isn't indexed at all — IndexedDB
+  doesn't support boolean keys, so `useExercises.ts` filters in memory
+  instead; fine at this dataset size (hundreds of rows).
+- **Abandoning a workout is a hard delete, not a soft "finish."** Use
+  `discardWorkout()` (`useActiveWorkout.ts`) for a workout the user starts
+  and doesn't want to keep — it deletes the `Workout`, its
+  `WorkoutExercise` rows, and their `SetLog` rows outright. Don't repurpose
+  `finishWorkout()` for this; a discarded session should never show up in
+  History.
+- **The active workout is visible from every tab.** `ActiveWorkoutBanner`
+  (`features/workout/`) is rendered in `AppShell.tsx` as a normal flex
+  sibling between the page `Outlet` and `BottomTabBar` — not
+  `position: fixed` — and shows itself whenever `useActiveWorkout()` is
+  non-null and the route isn't `/workout` already. Follow this pattern
+  (flex sibling in `AppShell`, not fixed) for any future persistent
+  cross-tab chrome.
 - **Ephemeral UI state** (open sheet, draft form values, selected filter
   chips before commit) stays as local component `useState`. Never persist
   transient UI state to Dexie.
@@ -117,6 +185,76 @@ weight in lb.
   `env(safe-area-inset-*)`) rather than hardcoding padding on
   notch/home-indicator-adjacent elements.
 
+## Dexie Schema Migrations
+
+When the schema needs to change, add a **new** `this.version(n)` call in
+`src/db/schema.ts` — never edit an existing `version()` call in place.
+Dexie replays every version in order for a returning user, so an edited
+old version silently breaks upgrades for anyone not starting from empty.
+
+- Only list the tables whose index string actually changed in that
+  version's `.stores({...})` — Dexie carries forward the schema of
+  unlisted tables from the previous version unchanged.
+- If existing rows need their data reshaped (not just a new index), chain
+  `.upgrade(async (tx) => { ... })` on that same `version()` call and
+  migrate data with `tx.table(name).toCollection().modify(...)` or
+  `tx.table(name).toArray()` + `bulkPut`. **Never assume the database is
+  empty** — this app has been in someone's hands since v1, so an upgrade
+  must handle real pre-existing rows, not just greenfield schemas. See the
+  v2 migration (denormalizing `exerciseId`/`workoutId` onto `SetLog`) for
+  the pattern: look up each row's parent, backfill the new fields, don't
+  touch anything else.
+- Bump `SCHEMA_VERSION` in `src/features/settings/dataTransfer.ts`
+  independently if the **export/import JSON shape** changes — it's a
+  separate version number from the Dexie schema version, since an export
+  file's shape and the live DB's on-disk structure don't have to change in
+  lockstep.
+
+## Visual Design System
+
+- **Elevation tokens**, defined in `src/index.css`'s `@theme` block:
+  `surface-0` (app bg) / `surface-1` (card) / `surface-2` (raised/active),
+  `border`, `accent` + `accent-fg`. Tailwind v4 auto-generates
+  `bg-surface-1`, `border-border`, `text-accent`, etc. from these — use
+  them instead of raw `slate-800`/`slate-900`/`cyan-500` literals so
+  elevation and the one accent color stay consistent app-wide.
+- **`Card`** (`components/ui/Card.tsx`) is the raised-surface primitive —
+  routine/history/PR-list rows use it instead of ad-hoc div classNames.
+- **`Chip`** (`components/ui/Chip.tsx`) is the shared pill — takes an
+  optional `color` dot (from `muscleColors.ts`) so identity never rests on
+  color alone; a label is always present.
+- **Muscle colors** (`src/lib/muscleColors.ts`): the 8 major hypertrophy
+  muscle groups get validated categorical hues (see the `dataviz` skill —
+  `node scripts/validate_palette.js` against this app's `#0b0f14` surface);
+  the other 5 (forearms, calves, core, cardio, fullBody — rarely a
+  *primary* tag in this app's seed data) get muted tones. The weekly-sets
+  chart caps at those 8 stackable series and folds anything else into a
+  muted "Other" segment — see `CHART_MUSCLE_PRIORITY` — rather than
+  generating a 9th hue. Extend `MUSCLE_COLORS`/`CHART_MUSCLE_PRIORITY`
+  together if a muscle's prominence should change.
+- **`src/lib/analytics.ts`** is the single source of truth for
+  tonnage/PR/muscle-set-weighting definitions — extend it there, don't
+  recompute a metric inline in a chart or card component. In particular:
+  - `MUSCLE_SET_WEIGHT` (primary 1.0 / secondary 0.5) and
+    `EPLEY_MAX_REPS_FOR_E1RM` (12) are documented constants, not magic
+    numbers.
+  - `isWorkingSet` (`completed && type !== 'warmup'`) is the shared
+    definition behind every volume/PR metric.
+  - `computeTonnage` deliberately **excludes warmups** — totals read lower
+    than tools that count warmup volume. Intentional, not a bug.
+  - `computePRProgression` is the single shared PR-detection pass (walks
+    every working set chronologically, tracks running bests per exercise)
+    — used by History card badges, `WorkoutDetailPage` per-set badges, and
+    the Analytics PR List via the `usePRProgression()` hook
+    (`src/hooks/`). Don't reimplement PR detection locally.
+  - `useHistoryFeed.ts` and `useAnalyticsData.ts` each load their whole
+    relevant tables into memory in one query (rather than one
+    `useLiveQuery` per card/chart) and compute everything in JS. This only
+    scales to a single-user, hundreds-to-low-thousands-of-rows dataset —
+    same sizing assumption already noted above for `isCustom` filtering —
+    revisit with date-range-limited queries first if this ever needs to
+    scale further.
+
 ## iOS PWA Notes
 
 - `registerType: 'autoUpdate'` is intentional (see `vite.config.ts`) — solo
@@ -132,19 +270,35 @@ weight in lb.
 - `apple-touch-icon` is referenced via an explicit `<link>` tag in
   `index.html`, not just the manifest `icons` array — iOS does not reliably
   read it from the manifest.
+- **Only one element scrolls: the `.scroll-touch` region inside a page.**
+  `html`/`body` are locked (`height: 100%; overflow: hidden;
+  overscroll-behavior: none`) and never scroll themselves. In standalone
+  mode, iOS lets the *document* scroll/rubber-band if anything is allowed
+  to overflow it even slightly (e.g. during the keyboard open/close
+  resize), which drags the whole app — header and bottom tab bar included
+  — down with it. The fix is that every page's scrollable content area
+  uses the `scroll-touch` utility (`src/index.css`: `overflow-y: auto` +
+  `-webkit-overflow-scrolling: touch` + `overscroll-behavior: contain`)
+  instead of bare `overflow-y-auto`, and `PageHeader`/`BottomTabBar` are
+  always plain flex siblings of that scroll region, never inside it. Don't
+  add `overflow-y-auto` directly anywhere in a page — use `scroll-touch`.
 
 ## Folder Structure
 
 ```
 src/
   db/            Dexie schema, types, seed data, seeding logic
-  features/      one folder per feature area (exercises, workout, history, settings)
-                 — page components + feature-local hooks/subcomponents live together
+  features/      one folder per feature area (exercises, workout, routines,
+                 history, analytics, settings) — page components +
+                 feature-local hooks/subcomponents live together
   components/
     layout/      app shell chrome (bottom tab bar, page header)
-    ui/          generic reusable primitives (button, input, sheet, stepper)
-  hooks/         cross-cutting hooks not tied to one feature
-  lib/           pure helper functions (units, ids, dates)
+    ui/          generic reusable primitives (button, input, sheet, stepper,
+                 card, chip, textarea)
+  hooks/         cross-cutting hooks not tied to one feature (usePRProgression,
+                 useLastSessionSet, useSettings, ...)
+  lib/           pure helper functions (units, ids, dates, analytics,
+                 muscleColors, chartTheme)
 ```
 
 ## Seed Data
@@ -167,3 +321,24 @@ Seeding is idempotent via a `seedVersion` counter in the `settings` table
 user who deletes all seeded exercises on purpose won't have them
 silently re-added, and future corrections to seed data can be shipped by
 bumping `SEED_VERSION` without touching user edits or custom exercises.
+
+## Storage & Backups
+
+There's no cloud sync, so IndexedDB eviction is real data loss — these two
+mechanisms exist to reduce that risk:
+
+- **Persistent storage request** (`src/lib/storage.ts`,
+  `requestPersistentStorageIfNeeded`): calls `navigator.storage.persist()`
+  once, on first launch only, gated on the `persistentStorageRequested`
+  settings flag so it never re-requests on later launches. The Settings
+  page shows the *current* status via a live `navigator.storage.persisted()`
+  check (`usePersistentStorageStatus` in `hooks/useSettings.ts`), not the
+  historical request result — the OS can grant persistence later (e.g.
+  once the PWA is actually added to the home screen), so the displayed
+  status should always reflect what's true right now.
+- **Last-exported nudge**: every successful export writes a
+  `lastExportedAt` timestamp to `settings` (`recordExportTimestamp` in
+  `dataTransfer.ts`). Settings shows a gentle (non-blocking) reminder if
+  it's been more than `EXPORT_NUDGE_THRESHOLD_DAYS` (30) since the last
+  export, or if there's never been one — see `SettingsPage.tsx`. This is
+  advisory only; never block or gate app usage on it.

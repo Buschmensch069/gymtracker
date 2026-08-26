@@ -36,7 +36,7 @@ export function StepperButton({ onStep, label, children }: StepperButtonProps) {
       onPointerUp={clearTimers}
       onPointerLeave={clearTimers}
       onPointerCancel={clearTimers}
-      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-800 text-2xl font-semibold text-slate-100 active:bg-slate-700"
+      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-surface-2 text-2xl font-semibold text-slate-100 active:bg-surface-2/70"
     >
       {children}
     </button>

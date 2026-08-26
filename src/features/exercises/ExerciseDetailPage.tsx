@@ -27,7 +27,7 @@ export function ExerciseDetailPage() {
           )
         }
       />
-      <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+      <div className="flex-1 scroll-touch space-y-4 px-4 py-4">
         <Row label="Primary muscle" value={MUSCLE_LABELS[exercise.primaryMuscle]} />
         <Row
           label="Secondary muscles"

@@ -122,6 +122,10 @@ export type SetType = 'warmup' | 'normal' | 'dropset' | 'failure'
 export interface SetLog {
   id: string
   workoutExerciseId: string
+  /** Denormalized from workoutExercises — see CLAUDE.md "Denormalized fields on SetLog". */
+  exerciseId: string
+  /** Denormalized from workoutExercises — see CLAUDE.md "Denormalized fields on SetLog". */
+  workoutId: string
   setNumber: number
   weightKg: number
   reps: number
@@ -129,6 +133,18 @@ export interface SetLog {
   type: SetType
   completed: boolean
   timestamp: number
+  /**
+   * Whether the user has directly entered a weight/reps value for this set
+   * (or it carried forward an already-touched value from the previous set
+   * in the same workout). `false` means weightKg/reps are still the
+   * untouched creation default — 0 is a legitimate real value (e.g.
+   * bodyweight exercises), so it can't double as an "unset" sentinel; this
+   * flag is what SetLogRow uses to decide whether to show the last-session
+   * placeholder instead of the stored number. Missing on rows created
+   * before this field existed — treat that as `true` (real historical data,
+   * never placeholder-eligible). See CLAUDE.md "Active Workout" notes.
+   */
+  touched?: boolean
 }
 
 export type UnitPreference = 'kg' | 'lb'

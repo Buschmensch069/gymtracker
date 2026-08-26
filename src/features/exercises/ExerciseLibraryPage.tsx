@@ -35,7 +35,7 @@ export function ExerciseLibraryPage() {
       <div className="pt-3">
         <MuscleFilterBar value={muscle} onChange={setMuscle} />
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 scroll-touch">
         {exercises === undefined ? null : exercises.length === 0 ? (
           <EmptyState title="No exercises found" message="Try a different search or filter." />
         ) : (

@@ -20,6 +20,31 @@ export class GymTrackerDB extends Dexie {
       setLogs: 'id, workoutExerciseId, setNumber, timestamp',
       settings: 'key',
     })
+
+    // v2: denormalize exerciseId/workoutId onto setLogs (see CLAUDE.md
+    // "Denormalized fields on SetLog") and backfill existing rows by looking
+    // up their parent workoutExercise. Only tables whose schema actually
+    // changed need to be listed here — Dexie carries the rest forward from
+    // v1 unchanged.
+    this.version(2)
+      .stores({
+        setLogs: 'id, workoutExerciseId, exerciseId, workoutId, setNumber, timestamp',
+      })
+      .upgrade(async (tx) => {
+        const workoutExercises = await tx.table('workoutExercises').toArray()
+        const workoutExerciseById = new Map(workoutExercises.map((we) => [we.id, we]))
+
+        await tx
+          .table('setLogs')
+          .toCollection()
+          .modify((setLog) => {
+            const parent = workoutExerciseById.get(setLog.workoutExerciseId)
+            if (parent) {
+              setLog.exerciseId = parent.exerciseId
+              setLog.workoutId = parent.workoutId
+            }
+          })
+      })
   }
 }
 
