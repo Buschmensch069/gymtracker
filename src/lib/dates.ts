@@ -43,8 +43,28 @@ export function startOfMonth(timestamp: number): number {
   return new Date(date.getFullYear(), date.getMonth(), 1).getTime()
 }
 
+/**
+ * ISO 8601 week number (week 1 = the week containing the year's first
+ * Thursday) for the Monday-anchored week starting at `weekStart`. ISO weeks
+ * are Monday-anchored too, so this lines up exactly with startOfWeek's
+ * bucketing — no separate week-numbering convention to keep in sync.
+ */
+function isoWeekNumber(weekStart: number): { week: number; year: number } {
+  const thursday = new Date(weekStart)
+  thursday.setDate(thursday.getDate() + 3)
+
+  const firstThursday = new Date(thursday.getFullYear(), 0, 1)
+  const firstThursdayOffset = (firstThursday.getDay() + 6) % 7
+  firstThursday.setDate(firstThursday.getDate() - firstThursdayOffset + 3)
+
+  const week = 1 + Math.round((thursday.getTime() - firstThursday.getTime()) / (7 * MS_PER_DAY))
+  return { week, year: thursday.getFullYear() }
+}
+
+/** "CW 34" — or "CW 1 '26" on the first week of an ISO year, so a year boundary is never ambiguous. */
 export function formatWeekLabel(weekStart: number): string {
-  return new Date(weekStart).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  const { week, year } = isoWeekNumber(weekStart)
+  return week === 1 ? `CW ${week} '${String(year).slice(-2)}` : `CW ${week}`
 }
 
 export function formatMonthLabel(monthStart: number): string {

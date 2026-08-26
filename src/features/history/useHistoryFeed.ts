@@ -88,9 +88,16 @@ export function useHistoryFeed(): HistoryMonthGroup[] | undefined {
         groups.set(monthStart, group)
       }
 
+      // Prefer the *live* routine name (so a rename shows up on past
+      // workouts), fall back to the snapshot taken when this workout was
+      // started (so a deleted routine doesn't revert its past workouts to
+      // "Freeform" — see Workout.routineName in db/types.ts), and only show
+      // "Freeform" for workouts that were never tied to a routine at all.
       group.entries.push({
         workout,
-        routineName: workout.routineId ? (routineNameById.get(workout.routineId) ?? null) : null,
+        routineName: workout.routineId
+          ? (routineNameById.get(workout.routineId) ?? workout.routineName ?? null)
+          : null,
         summary,
         prCount,
       })

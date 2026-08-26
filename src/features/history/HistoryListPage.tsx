@@ -74,7 +74,7 @@ function HistoryCard({ entry, unit }: { entry: HistoryWorkoutEntry; unit: UnitPr
         {summary.exerciseLines.length > 0 && (
           <div className="mt-3 space-y-1 border-t border-border pt-3 text-sm text-slate-400">
             {summary.exerciseLines.map((line) => (
-              <ExerciseLine key={line.exerciseId} line={line} unit={unit} />
+              <ExerciseLine key={line.workoutExerciseId} line={line} unit={unit} />
             ))}
           </div>
         )}

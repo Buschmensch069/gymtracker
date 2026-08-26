@@ -2,6 +2,8 @@ import { computeTonnage, isWorkingSet } from '../../lib/analytics'
 import type { WorkoutExerciseWithDetails } from '../workout/useActiveWorkout'
 
 export interface ExerciseLineData {
+  /** The owning WorkoutExercise's id — unique per line, unlike exerciseId (two blocks in one workout can share an exercise, e.g. two Hevy variants that matched the same seed exercise). Use this for React keys. */
+  workoutExerciseId: string
   exerciseId: string
   exerciseName: string
   setCount: number
@@ -36,6 +38,7 @@ export function computeWorkoutSummary(workoutExercises: WorkoutExerciseWithDetai
     const top = uniform ? first : workingSets.reduce((best, s) => (s.weightKg > best.weightKg ? s : best), first)
 
     exerciseLines.push({
+      workoutExerciseId: we.id,
       exerciseId: we.exerciseId,
       exerciseName: we.exercise?.name ?? 'Exercise',
       setCount: workingSets.length,

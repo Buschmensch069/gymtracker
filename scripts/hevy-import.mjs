@@ -169,12 +169,6 @@ function parseHevyDate(str) {
 // Exercise-name fuzzy matching
 // ---------------------------------------------------------------------------
 
-const EQUIPMENT_WORDS = new Set([
-  'barbell', 'barbells', 'dumbbell', 'dumbbells', 'cable', 'cables',
-  'machine', 'machines', 'smith', 'bodyweight', 'band', 'bands',
-  'kettlebell', 'kettlebells', 'plate', 'plates',
-])
-
 const EQUIPMENT_PHRASES = [
   [/smith\s*machine/, 'smithMachine'],
   [/machine/, 'machine'],
@@ -614,7 +608,9 @@ async function main() {
   }
 
   for (const w of workouts) {
-    w.routineId = routines.get(w.__routineTitle).id
+    const routine = routines.get(w.__routineTitle)
+    w.routineId = routine.id
+    w.routineName = routine.name // snapshot, matches Workout.routineName — see CLAUDE.md-equivalent note in db/types.ts
     delete w.__routineTitle
   }
 

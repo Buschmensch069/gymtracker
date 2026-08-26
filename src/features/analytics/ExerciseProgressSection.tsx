@@ -2,11 +2,22 @@ import { useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { ExercisePickerSheet } from '../exercises/ExercisePickerSheet'
 import type { UnitPreference } from '../../db/types'
+import type { AnalyticsTimeRange } from '../../lib/timeRange'
 import { E1RMChart } from './E1RMChart'
 import { EmptyChart } from './EmptyChart'
 import type { AnalyticsData } from './useAnalyticsData'
 
-export function ExerciseProgressSection({ data, unit }: { data: AnalyticsData; unit: UnitPreference }) {
+export function ExerciseProgressSection({
+  data,
+  unit,
+  range,
+  earliestTimestamp,
+}: {
+  data: AnalyticsData
+  unit: UnitPreference
+  range: AnalyticsTimeRange
+  earliestTimestamp: number | undefined
+}) {
   const [exerciseId, setExerciseId] = useState<string | undefined>(undefined)
   const [showPicker, setShowPicker] = useState(false)
 
@@ -26,7 +37,13 @@ export function ExerciseProgressSection({ data, unit }: { data: AnalyticsData; u
       </button>
 
       {exerciseId ? (
-        <E1RMChart data={data} exerciseId={exerciseId} unit={unit} />
+        <E1RMChart
+          data={data}
+          exerciseId={exerciseId}
+          unit={unit}
+          range={range}
+          earliestTimestamp={earliestTimestamp}
+        />
       ) : (
         <EmptyChart message="Pick an exercise to see its estimated 1RM trend." />
       )}

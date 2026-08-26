@@ -37,6 +37,29 @@ export function computeTonnage(sets: SetLog[]): number {
   return sets.filter(isWorkingSet).reduce((sum, set) => sum + set.weightKg * set.reps, 0)
 }
 
+/**
+ * Weighted muscle-group breakdown for an arbitrary collection of sets (a
+ * single workout, a week, a whole history) — the shared weighting logic
+ * behind both computeWeeklyMuscleSets (bucketed by week) and a single
+ * workout's muscle split (WorkoutDetailPage). Non-working sets are ignored.
+ */
+export function computeMuscleSplit(
+  sets: SetLog[],
+  exerciseById: Map<string, Exercise>,
+): Partial<Record<PrimaryMuscle, number>> {
+  const totals: Partial<Record<PrimaryMuscle, number>> = {}
+  for (const set of sets) {
+    if (!isWorkingSet(set)) continue
+    const exercise = exerciseById.get(set.exerciseId)
+    if (!exercise) continue
+    totals[exercise.primaryMuscle] = (totals[exercise.primaryMuscle] ?? 0) + MUSCLE_SET_WEIGHT.primary
+    for (const secondary of exercise.secondaryMuscles) {
+      totals[secondary] = (totals[secondary] ?? 0) + MUSCLE_SET_WEIGHT.secondary
+    }
+  }
+  return totals
+}
+
 export interface WeeklyMuscleSets {
   weekStart: number
   label: string
@@ -57,18 +80,17 @@ export function computeWeeklyMuscleSets(
   }
   const weekIndexByStart = new Map(weeks.map((week, index) => [week.weekStart, index]))
 
+  const setsByWeekIndex = new Map<number, SetLog[]>()
   for (const set of sets) {
-    if (!isWorkingSet(set)) continue
-    const exercise = exerciseById.get(set.exerciseId)
-    if (!exercise) continue
     const index = weekIndexByStart.get(startOfWeek(set.timestamp))
     if (index === undefined) continue
+    const list = setsByWeekIndex.get(index) ?? []
+    list.push(set)
+    setsByWeekIndex.set(index, list)
+  }
 
-    const totals = weeks[index].totals
-    totals[exercise.primaryMuscle] = (totals[exercise.primaryMuscle] ?? 0) + MUSCLE_SET_WEIGHT.primary
-    for (const secondary of exercise.secondaryMuscles) {
-      totals[secondary] = (totals[secondary] ?? 0) + MUSCLE_SET_WEIGHT.secondary
-    }
+  for (const [index, weekSets] of setsByWeekIndex) {
+    weeks[index].totals = computeMuscleSplit(weekSets, exerciseById)
   }
 
   return weeks
@@ -95,6 +117,39 @@ export function computeWorkoutsPerWeek(workouts: Workout[], weekCount: number): 
     const index = weekIndexByStart.get(startOfWeek(workout.startedAt))
     if (index === undefined) continue
     weeks[index].count += 1
+  }
+
+  return weeks
+}
+
+export interface WeeklyTonnage {
+  weekStart: number
+  label: string
+  tonnageKg: number
+}
+
+/** Sum of computeTonnage per finished workout, bucketed into the last `weekCount` Monday-anchored weeks. */
+export function computeWeeklyTonnage(setLogs: SetLog[], workouts: Workout[], weekCount: number): WeeklyTonnage[] {
+  const currentWeekStart = startOfWeek(Date.now())
+  const weeks: WeeklyTonnage[] = []
+  for (let i = weekCount - 1; i >= 0; i--) {
+    const weekStart = currentWeekStart - i * MS_PER_WEEK
+    weeks.push({ weekStart, label: formatWeekLabel(weekStart), tonnageKg: 0 })
+  }
+  const weekIndexByStart = new Map(weeks.map((week, index) => [week.weekStart, index]))
+
+  const setsByWorkoutId = new Map<string, SetLog[]>()
+  for (const set of setLogs) {
+    const list = setsByWorkoutId.get(set.workoutId) ?? []
+    list.push(set)
+    setsByWorkoutId.set(set.workoutId, list)
+  }
+
+  for (const workout of workouts) {
+    if (workout.finishedAt === undefined) continue
+    const index = weekIndexByStart.get(startOfWeek(workout.startedAt))
+    if (index === undefined) continue
+    weeks[index].tonnageKg += computeTonnage(setsByWorkoutId.get(workout.id) ?? [])
   }
 
   return weeks

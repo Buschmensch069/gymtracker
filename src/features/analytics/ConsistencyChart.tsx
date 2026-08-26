@@ -1,13 +1,21 @@
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { computeWorkoutsPerWeek } from '../../lib/analytics'
 import { CHART_ACCENT, CHART_AXIS_TICK, CHART_GRID, CHART_TOOLTIP_STYLE } from '../../lib/chartTheme'
+import { type AnalyticsTimeRange, weekCountForRange } from '../../lib/timeRange'
 import { EmptyChart } from './EmptyChart'
 import type { AnalyticsData } from './useAnalyticsData'
 
-const WEEK_COUNT = 12
-
-export function ConsistencyChart({ data }: { data: AnalyticsData }) {
-  const weeks = computeWorkoutsPerWeek(data.workouts, WEEK_COUNT)
+export function ConsistencyChart({
+  data,
+  range,
+  earliestTimestamp,
+}: {
+  data: AnalyticsData
+  range: AnalyticsTimeRange
+  earliestTimestamp: number | undefined
+}) {
+  const weekCount = weekCountForRange(range, earliestTimestamp)
+  const weeks = computeWorkoutsPerWeek(data.workouts, weekCount)
 
   if (weeks.every((w) => w.count === 0)) {
     return <EmptyChart message="Finish a few workouts to see your weekly consistency here." />
@@ -15,10 +23,10 @@ export function ConsistencyChart({ data }: { data: AnalyticsData }) {
 
   return (
     <ResponsiveContainer width="100%" height={200}>
-      <BarChart data={weeks} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+      <BarChart data={weeks} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
         <CartesianGrid stroke={CHART_GRID} vertical={false} />
         <XAxis dataKey="label" tick={CHART_AXIS_TICK} axisLine={{ stroke: CHART_GRID }} tickLine={false} />
-        <YAxis tick={CHART_AXIS_TICK} axisLine={false} tickLine={false} allowDecimals={false} width={24} />
+        <YAxis tick={CHART_AXIS_TICK} axisLine={false} tickLine={false} allowDecimals={false} width={28} />
         <Tooltip
           contentStyle={CHART_TOOLTIP_STYLE}
           cursor={{ fill: 'rgba(255,255,255,0.04)' }}

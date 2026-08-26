@@ -36,24 +36,27 @@ export function useWorkoutExercises(workoutId: string | undefined): WorkoutExerc
   }, [workoutId])
 }
 
-export async function startWorkout(routineId?: string): Promise<string> {
+export async function startWorkout(routineId?: string, routineName?: string): Promise<string> {
   const id = newId()
-  await db.workouts.add({ id, routineId, startedAt: Date.now(), finishedAt: undefined, notes: '' })
+  await db.workouts.add({ id, routineId, routineName, startedAt: Date.now(), finishedAt: undefined, notes: '' })
   return id
 }
 
 /**
- * Starts a workout from a routine: creates the Workout with routineId set,
- * adds each routine exercise in order, then pre-populates each with
- * targetSets empty rows (via the same addSet used by "+ Add Set" — see its
- * touched-inheritance comment for why this loop naturally leaves every
- * pre-populated set untouched/placeholder-eligible with no special-casing).
+ * Starts a workout from a routine: creates the Workout with routineId set
+ * (plus a routineName snapshot — see Workout.routineName in db/types.ts, so
+ * deleting this routine later can't make this workout revert to
+ * "Freeform" in History), adds each routine exercise in order, then
+ * pre-populates each with targetSets empty rows (via the same addSet used
+ * by "+ Add Set" — see its touched-inheritance comment for why this loop
+ * naturally leaves every pre-populated set untouched/placeholder-eligible
+ * with no special-casing).
  */
 export async function startWorkoutFromRoutine(routineId: string): Promise<string> {
   const routine = await db.routines.get(routineId)
   if (!routine) throw new Error('Routine not found')
 
-  const workoutId = await startWorkout(routineId)
+  const workoutId = await startWorkout(routineId, routine.name)
   for (const routineExercise of routine.exercises) {
     const workoutExerciseId = await addExerciseToWorkout(workoutId, routineExercise.exerciseId)
     for (let i = 0; i < routineExercise.targetSets; i++) {

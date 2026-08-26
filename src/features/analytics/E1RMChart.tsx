@@ -2,6 +2,7 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import { computeE1RM, isWorkingSet } from '../../lib/analytics'
 import { CHART_ACCENT, CHART_AXIS_TICK, CHART_GRID, CHART_TOOLTIP_STYLE } from '../../lib/chartTheme'
 import { formatDate } from '../../lib/dates'
+import { type AnalyticsTimeRange, startTimestampForRange } from '../../lib/timeRange'
 import { weightForDisplay } from '../../lib/units'
 import type { UnitPreference } from '../../db/types'
 import { EmptyChart } from './EmptyChart'
@@ -11,12 +12,19 @@ export function E1RMChart({
   data,
   exerciseId,
   unit,
+  range,
+  earliestTimestamp,
 }: {
   data: AnalyticsData
   exerciseId: string
   unit: UnitPreference
+  range: AnalyticsTimeRange
+  earliestTimestamp: number | undefined
 }) {
-  const sets = data.setLogs.filter((s) => s.exerciseId === exerciseId && isWorkingSet(s))
+  const startTs = startTimestampForRange(range, earliestTimestamp)
+  const sets = data.setLogs.filter(
+    (s) => s.exerciseId === exerciseId && isWorkingSet(s) && s.timestamp >= startTs,
+  )
 
   const bestByWorkout = new Map<string, { timestamp: number; e1rm: number }>()
   for (const set of sets) {
@@ -43,10 +51,10 @@ export function E1RMChart({
 
   return (
     <ResponsiveContainer width="100%" height={200}>
-      <LineChart data={rows} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+      <LineChart data={rows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
         <CartesianGrid stroke={CHART_GRID} vertical={false} />
         <XAxis dataKey="label" tick={CHART_AXIS_TICK} axisLine={{ stroke: CHART_GRID }} tickLine={false} />
-        <YAxis tick={CHART_AXIS_TICK} axisLine={false} tickLine={false} width={40} domain={['auto', 'auto']} />
+        <YAxis tick={CHART_AXIS_TICK} axisLine={false} tickLine={false} width={44} domain={['auto', 'auto']} />
         <Tooltip
           contentStyle={CHART_TOOLTIP_STYLE}
           formatter={(value) => [`${value} ${unit}`, 'Est. 1RM']}

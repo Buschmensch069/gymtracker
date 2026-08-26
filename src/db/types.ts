@@ -105,6 +105,16 @@ export interface Routine {
 export interface Workout {
   id: string
   routineId?: string
+  /**
+   * Snapshot of the routine's name at the moment this workout was started
+   * from it. History prefers the *live* routine name (via routineId) so a
+   * rename shows up on past workouts too, but falls back to this snapshot
+   * if the routine has since been deleted — deleting a routine must never
+   * make its past workouts revert to "Freeform". Undefined for freeform
+   * workouts (no routineId) and for pre-existing rows before this field
+   * existed (backfilled by the v3 schema migration instead).
+   */
+  routineName?: string
   startedAt: number
   finishedAt?: number
   notes: string

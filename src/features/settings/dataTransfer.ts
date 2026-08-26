@@ -71,12 +71,27 @@ export function validateExport(raw: unknown): GymTrackerExport {
 }
 
 export async function importAllData(payload: GymTrackerExport): Promise<void> {
+  // Backfill Workout.routineName from this same payload's routines for any
+  // imported workout that has a routineId but no snapshot yet — e.g. an
+  // older export file taken before this field existed, or a hand-built
+  // import. Without this, deleting that routine later would revert the
+  // workout to "Freeform" in History with no way to recover the name (the
+  // v3 schema migration only backfills rows already in the live DB at the
+  // moment of that one-time version upgrade — it never runs again for data
+  // bulk-added by a later import, which is a separate write path).
+  const routineNameById = new Map(payload.data.routines.map((r) => [r.id, r.name]))
+  const workouts = payload.data.workouts.map((workout) =>
+    workout.routineId && !workout.routineName
+      ? { ...workout, routineName: routineNameById.get(workout.routineId) ?? workout.routineName }
+      : workout,
+  )
+
   await db.transaction('rw', db.tables, async () => {
     await Promise.all(db.tables.map((table) => table.clear()))
     await Promise.all([
       db.exercises.bulkAdd(payload.data.exercises),
       db.routines.bulkAdd(payload.data.routines),
-      db.workouts.bulkAdd(payload.data.workouts),
+      db.workouts.bulkAdd(workouts),
       db.workoutExercises.bulkAdd(payload.data.workoutExercises),
       db.setLogs.bulkAdd(payload.data.setLogs),
       db.settings.bulkAdd(payload.data.settings),

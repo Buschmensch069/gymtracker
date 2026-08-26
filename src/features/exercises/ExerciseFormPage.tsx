@@ -135,7 +135,7 @@ function ExerciseFormFields({ id, existing }: { id: string | undefined; existing
           <Button fullWidth onClick={handleSave} disabled={!canSave}>
             Save
           </Button>
-          {isEdit && (
+          {isEdit && existing?.isCustom && (
             <Button fullWidth variant="danger" onClick={handleDelete}>
               Delete Exercise
             </Button>

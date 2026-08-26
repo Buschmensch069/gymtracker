@@ -45,6 +45,27 @@ export class GymTrackerDB extends Dexie {
             }
           })
       })
+
+    // v3: backfill Workout.routineName (see types.ts) for existing rows so a
+    // routine can be deleted later without its past workouts reverting to
+    // "Freeform" in History — see CLAUDE.md-equivalent note on Workout.
+    // No index changed, so no .stores() entry is needed for this version.
+    this.version(3)
+      .stores({})
+      .upgrade(async (tx) => {
+        const routines = await tx.table('routines').toArray()
+        const routineNameById = new Map(routines.map((r) => [r.id, r.name]))
+
+        await tx
+          .table('workouts')
+          .toCollection()
+          .modify((workout) => {
+            if (workout.routineId && !workout.routineName) {
+              const name = routineNameById.get(workout.routineId)
+              if (name) workout.routineName = name
+            }
+          })
+      })
   }
 }
 
