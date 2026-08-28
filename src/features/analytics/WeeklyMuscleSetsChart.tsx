@@ -170,7 +170,12 @@ export function WeeklyMuscleSetsChart({
     })
   }
 
-  const renderTooltip = ({ active, payload, label }: TooltipContentProps<number, string>) => {
+  // `<Tooltip>` isn't generic at the JSX call site — it resolves to
+  // ContentType<ValueType, NameType>, the defaults — so `content` must accept
+  // exactly those. Narrowing the parameter to <number, string> makes the
+  // function contravariantly incompatible; the values get narrowed in the body
+  // instead, where they're actually read.
+  const renderTooltip = ({ active, payload, label }: TooltipContentProps) => {
     if (!active || !payload?.length) return null
     const row = payload[0]?.payload as ChartRow | undefined
     const otherParts = (row?.[OTHER_PARTS_KEY] as OtherPart[] | undefined) ?? []
