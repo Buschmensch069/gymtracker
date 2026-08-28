@@ -1,6 +1,9 @@
 import { Outlet } from 'react-router-dom'
 import { useAppViewportHeight } from '../../hooks/useAppViewportHeight'
 import { ActiveWorkoutBanner } from '../../features/workout/ActiveWorkoutBanner'
+// TEMPORARY — remove with src/components/debug/ViewportDebugOverlay.tsx once
+// the standalone bottom-spacing numbers have been read off the device.
+import { ViewportDebugOverlay } from '../debug/ViewportDebugOverlay'
 import { BottomTabBar } from './BottomTabBar'
 
 export function AppShell() {
@@ -19,6 +22,7 @@ export function AppShell() {
       </div>
       <ActiveWorkoutBanner />
       <BottomTabBar />
+      <ViewportDebugOverlay />
     </div>
   )
 }
