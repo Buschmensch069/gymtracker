@@ -118,12 +118,7 @@ body {
 }
 
 body {
-  /* TEMPORARY DIAGNOSTIC (revert with background_color in vite.config.ts):
-     body's real colour is #0b0f14, identical to the manifest background_color,
-     so a dark strip cannot distinguish "iOS window background" from "our own
-     canvas". GREEN here makes that a three-way read: magenta = iOS, green =
-     ours (body propagating to the canvas), dark = neither. */
-  background: #00ff00;
+  background: var(--color-surface-0);
   color: #e8eaed;
   font-family:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif;
