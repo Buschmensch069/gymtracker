@@ -18,7 +18,9 @@ const tabs: Tab[] = [
 
 export function BottomTabBar() {
   return (
-    <nav className="flex shrink-0 border-t border-border bg-surface-1 pb-safe">
+    // pb-home-indicator, not pb-safe: reserving the full 34px inset inside the
+    // bar left an empty strip under the icons. See index.css.
+    <nav className="flex shrink-0 border-t border-border bg-surface-1 pb-home-indicator">
       {tabs.map(({ to, label, Icon }) => (
         <NavLink key={to} to={to} className="flex flex-1 flex-col items-center justify-center gap-1 py-2">
           {({ isActive }) => (

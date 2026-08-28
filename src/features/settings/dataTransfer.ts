@@ -1,7 +1,22 @@
 import { db, ALL_TABLES } from '../../db/schema'
 import type { Exercise, Routine, SetLog, Setting, Workout, WorkoutExercise } from '../../db/types'
 
-const SCHEMA_VERSION = 1
+/**
+ * Export-file format version. Separate from the Dexie schema version (see
+ * CLAUDE.md) — the two don't move in lockstep.
+ *
+ * v2 adds RoutineExercise.restTimerSeconds.
+ */
+const SCHEMA_VERSION = 2
+
+/**
+ * Older formats we can still read. Import is this app's only backup mechanism
+ * and there's no cloud copy, so rejecting a file someone exported last month
+ * would be data loss by pedantry — v1 files are accepted and upgraded on the
+ * way in (see upgradeExport). Only add a version here if it can actually be
+ * migrated forward.
+ */
+const IMPORTABLE_SCHEMA_VERSIONS = [1, SCHEMA_VERSION]
 
 interface GymTrackerExport {
   schemaVersion: number
@@ -56,7 +71,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export function validateExport(raw: unknown): GymTrackerExport {
   if (!isRecord(raw)) throw new Error('File is not a valid export.')
-  if (raw.schemaVersion !== SCHEMA_VERSION) {
+  if (typeof raw.schemaVersion !== 'number' || !IMPORTABLE_SCHEMA_VERSIONS.includes(raw.schemaVersion)) {
     throw new Error('Export file format is outdated or unrecognized. Please re-export.')
   }
   if (!isRecord(raw.data)) throw new Error('File is missing its data section.')
@@ -70,7 +85,21 @@ export function validateExport(raw: unknown): GymTrackerExport {
   return raw as unknown as GymTrackerExport
 }
 
-export async function importAllData(payload: GymTrackerExport): Promise<void> {
+/**
+ * Bring an accepted older export up to the current shape. v1 files predate
+ * RoutineExercise.restTimerSeconds; it's left undefined rather than filled in
+ * with a guess, because every read site already resolves undefined to the
+ * compound/isolation default for that exercise — which is a better answer than
+ * a value baked in at import time from an exercise row that might since have
+ * been edited.
+ */
+function upgradeExport(payload: GymTrackerExport): GymTrackerExport {
+  return { ...payload, schemaVersion: SCHEMA_VERSION }
+}
+
+export async function importAllData(rawPayload: GymTrackerExport): Promise<void> {
+  const payload = upgradeExport(rawPayload)
+
   // Backfill Workout.routineName from this same payload's routines for any
   // imported workout that has a routineId but no snapshot yet — e.g. an
   // older export file taken before this field existed, or a hand-built

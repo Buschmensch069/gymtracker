@@ -2,6 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../../db/schema'
 import type { Exercise, SetLog, SetType, Workout, WorkoutExercise } from '../../db/types'
 import { newId } from '../../lib/ids'
+import { stopRestTimer } from './useRestTimer'
 
 export interface WorkoutExerciseWithDetails extends WorkoutExercise {
   exercise: Exercise | undefined
@@ -68,6 +69,9 @@ export async function startWorkoutFromRoutine(routineId: string): Promise<string
 
 export async function finishWorkout(workoutId: string): Promise<void> {
   await db.workouts.update(workoutId, { finishedAt: Date.now() })
+  // A rest timer outlives its workout otherwise — it lives in `settings`, not
+  // on the workout row, so nothing else would clear it.
+  await stopRestTimer()
 }
 
 /** Deletes an abandoned workout entirely (workout + its exercises + their sets), not a soft-finish. */
@@ -79,6 +83,7 @@ export async function discardWorkout(workoutId: string): Promise<void> {
     await db.workoutExercises.bulkDelete(workoutExerciseIds)
     await db.workouts.delete(workoutId)
   })
+  await stopRestTimer()
 }
 
 export async function addExerciseToWorkout(workoutId: string, exerciseId: string): Promise<string> {

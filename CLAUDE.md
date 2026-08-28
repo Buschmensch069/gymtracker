@@ -183,7 +183,17 @@ weight in lb.
 - **Safe areas**: use the `pt-safe` / `pb-safe` / `pl-safe` / `pr-safe`
   utilities defined in `src/index.css` (backed by
   `env(safe-area-inset-*)`) rather than hardcoding padding on
-  notch/home-indicator-adjacent elements.
+  notch/home-indicator-adjacent elements. Two rules go with them:
+  - **Only on elements genuinely flush with that screen edge.** The bottom
+    tab bar is; a page action bar rendered *above* it (see
+    `ActiveWorkoutPage`) is not, and a `pb-safe` there is just 34px of dead
+    space in the middle of the layout.
+  - **At the bottom, reach for `pb-home-indicator`, not `pb-safe`.** The
+    full 34px inset reserved inside the tab bar's own box left an empty
+    strip under the icons that read as space held for Safari's toolbar.
+    `pb-home-indicator` clamps it (`min(env(...), 6px)`) — the indicator
+    needs a little clearance, not the whole inset. `pb-safe` remains right
+    for a full-height overlay whose content really does run to the edge.
 
 ## Dexie Schema Migrations
 
@@ -208,7 +218,12 @@ old version silently breaks upgrades for anyone not starting from empty.
   independently if the **export/import JSON shape** changes — it's a
   separate version number from the Dexie schema version, since an export
   file's shape and the live DB's on-disk structure don't have to change in
-  lockstep.
+  lockstep. Currently **v2** (added `RoutineExercise.restTimerSeconds`).
+  When you bump it, also add the old version to
+  `IMPORTABLE_SCHEMA_VERSIONS` and migrate it in `upgradeExport` — import
+  is the only backup mechanism this app has and there's no cloud copy, so
+  refusing a file the user exported last month is data loss by pedantry.
+  Only refuse a version that genuinely can't be migrated forward.
 
 ## Visual Design System
 
@@ -329,6 +344,78 @@ old version silently breaks upgrades for anyone not starting from empty.
   instead of bare `overflow-y-auto`, and `PageHeader`/`BottomTabBar` are
   always plain flex siblings of that scroll region, never inside it. Don't
   add `overflow-y-auto` directly anywhere in a page — use `scroll-touch`.
+
+## Rest Timer
+
+Per-exercise rest between sets, auto-started when a set is marked complete.
+
+- **`RoutineExercise.restTimerSeconds`** holds it, seeded from
+  `defaultRestSecondsFor()` (`src/lib/restTimer.ts`) when an exercise is
+  added to a routine and editable per row in the routine editor. It's
+  optional and **non-indexed inside the embedded `exercises` array, so it
+  needed no Dexie `version()` bump** — every read site resolves
+  `restTimerSeconds ?? defaultRestSecondsFor(exercise)`, so routines saved
+  before the field existed pick up a sensible default with no migration
+  (same approach as `SetLog.touched`). An explicit `0` means "no timer for
+  this exercise" and survives that `??` intact.
+- **`isCompound()` is a heuristic, deliberately.** It reads "does a second
+  joint move?" off the seed data's own tagging convention — 2+ synergists,
+  or a torso prime mover with an arm synergist, or a leg prime mover with
+  another leg synergist — rather than maintaining a list of 150 names.
+  Counting synergists alone is *not* enough; that put every row, pulldown
+  and hack squat on an isolation rest. It still misjudges a few, which is
+  fine: it only picks the default, and the routine editor is where a
+  disagreement gets settled.
+- **The running timer lives in the `settings` table**, key `restTimer`, as
+  an **end timestamp** — not a countdown. This is not the "ephemeral UI
+  state" that belongs in `useState`: it has to survive the process. iOS
+  freezes a backgrounded web app's JS, so a countdown held in memory comes
+  back frozen at whatever it read when the screen locked. Deriving the
+  remaining time from `endsAt` against the wall clock on every render means
+  a return from suspension shows the *true* elapsed rest, including
+  overtime, with no recovery logic. It's in Dexie rather than
+  `localStorage` because both `ActiveWorkoutPage` and the cross-tab
+  `ActiveWorkoutBanner` render it, and `useLiveQuery` is how this app
+  shares state.
+- **`RestTimerController` is mounted exactly once**, in `AppShell`. It owns
+  the wake lock, the alarm and the flash — the three things that must
+  happen once per timer, not once per component showing it. The countdown
+  readouts (`RestTimerBar`, `ActiveWorkoutBanner`, both via
+  `RestCountdown`) are pure display and can be mounted anywhere.
+  Correspondingly `useWakeLockHolder` has exactly one caller and everything
+  else reads `useWakeLockHeld()`.
+
+### The ceiling — say it, don't paper over it
+
+**If the phone locks or the app is backgrounded, nothing in this PWA can
+alert you.** iOS suspends the JS context, which takes `setTimeout`, Web
+Audio and the service worker with it. This is a platform limit, and every
+workaround was checked before settling here:
+
+- **`registration.showNotification()` scheduled with `setTimeout`** — the
+  timer never fires while suspended. The notification would land when you
+  next open the app, which is worse than useless.
+- **Notification Triggers** (`showTrigger` / `TimestampTrigger`), which
+  would hand the schedule to the browser — never shipped past a Chrome
+  origin trial, doesn't exist in Safari.
+- **Real Web Push** does wake the service worker while locked, and a web
+  app's notifications do mirror to a paired Apple Watch with a haptic. It
+  needs a server. This app has no backend and isn't getting one.
+- **Audio as a fallback** — Web Audio is suspended on lock too, and the
+  "silent looping track keeps the page alive" trick is broken on current
+  Safari. The alarm is also inaudible with the ring switch on silent, which
+  is why the visual flash is a peer of the sound, not a nicety.
+
+So the design is wake lock + visible countdown + audible alarm + flash, and
+**`RestTimerBar` states plainly when the wake lock isn't held** rather than
+letting a timer look like it's running when it will die on lock. Screen
+Wake Lock needs **iOS 18.4+** in home-screen web apps (WebKit bug 254545 —
+the API shipped in 16.4 but was broken in installed PWAs until 18.4).
+`useWakeLock.ts` reports `held`, not just `supported`, because on a pre-18.4
+device the API exists and the request rejects.
+
+If you're tempted to add a "notify me when resting" toggle: re-read this
+section first. It will silently no-op exactly when it matters.
 
 ## Folder Structure
 

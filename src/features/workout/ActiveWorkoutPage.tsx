@@ -10,7 +10,9 @@ import { useUnitPreference } from '../../hooks/useSettings'
 import { formatDuration } from '../../lib/dates'
 import { db } from '../../db/schema'
 import { ExercisePickerSheet } from '../exercises/ExercisePickerSheet'
+import { RestTimerBar } from './RestTimerBar'
 import { SetLogRow } from './SetLogRow'
+import { useRestSecondsByExercise } from './useRestTimer'
 import {
   addExerciseToWorkout,
   addSet,
@@ -25,6 +27,10 @@ export function ActiveWorkoutPage() {
   const activeWorkout = useActiveWorkout()
   const [unit] = useUnitPreference()
   const workoutExercises = useWorkoutExercises(activeWorkout?.id)
+  const restSecondsByExercise = useRestSecondsByExercise(
+    activeWorkout?.routineId,
+    (workoutExercises ?? []).map((we) => we.exercise),
+  )
   const [showAddExercise, setShowAddExercise] = useState(false)
   const [showNotes, setShowNotes] = useState(false)
 
@@ -86,7 +92,13 @@ export function ActiveWorkoutPage() {
               </button>
             </div>
             {we.sets.map((set) => (
-              <SetLogRow key={set.id} set={set} unit={unit} />
+              <SetLogRow
+                key={set.id}
+                set={set}
+                unit={unit}
+                restSeconds={restSecondsByExercise.get(we.exerciseId) ?? 0}
+                exerciseName={we.exercise?.name}
+              />
             ))}
             <button
               type="button"
@@ -99,18 +111,19 @@ export function ActiveWorkoutPage() {
         ))}
       </div>
 
-      {/* pb-safe on its own wrapper — it overrides py-3's bottom padding if
-          they share an element, which zeroes the action bar's padding
-          in-browser (inset 0). See PageHeader for the same split. */}
-      <div className="shrink-0 border-t border-border pb-safe">
-        <div className="flex gap-2 px-4 py-3">
-          <Button variant="secondary" fullWidth onClick={() => setShowAddExercise(true)}>
-            Add Exercise
-          </Button>
-          <Button fullWidth onClick={() => finishWorkout(activeWorkout.id)}>
-            Finish
-          </Button>
-        </div>
+      <RestTimerBar />
+
+      {/* No bottom safe-area inset here: AppShell renders BottomTabBar below
+          this action bar, so it is never flush with the home indicator. The
+          pb-safe this used to carry was 34px of dead space in the middle of
+          the layout. */}
+      <div className="flex shrink-0 gap-2 border-t border-border px-4 py-3">
+        <Button variant="secondary" fullWidth onClick={() => setShowAddExercise(true)}>
+          Add Exercise
+        </Button>
+        <Button fullWidth onClick={() => finishWorkout(activeWorkout.id)}>
+          Finish
+        </Button>
       </div>
 
       {showAddExercise && (

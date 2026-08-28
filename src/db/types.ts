@@ -94,6 +94,19 @@ export interface RoutineExercise {
   exerciseId: string
   targetSets: number
   targetRepRange: string
+  /**
+   * Rest between sets, in seconds. Seeded from defaultRestSecondsFor()
+   * (src/lib/restTimer.ts) when the exercise is added to a routine, then
+   * freely editable per exercise in the routine editor.
+   *
+   * Optional because routines saved before this field existed have it
+   * undefined, and it's a plain non-indexed field inside the embedded
+   * `exercises` array — no Dexie version bump (see CLAUDE.md). Every read
+   * site resolves `restTimerSeconds ?? defaultRestSecondsFor(exercise)`
+   * rather than migrating the rows, so an old routine picks up a sensible
+   * default the first time it's used and keeps it once re-saved.
+   */
+  restTimerSeconds?: number
 }
 
 export interface Routine {

@@ -35,6 +35,24 @@
 @utility pb-safe {
   padding-bottom: env(safe-area-inset-bottom);
 }
+
+/*
+ * Home-indicator clearance for the bottom tab bar. `pb-safe` reserves the
+ * FULL env(safe-area-inset-bottom) — 34px on home-indicator devices — inside
+ * the element's own box; stacked on the bar's own padding that made the tab
+ * bar ~95px tall with a 34px empty strip below the icons, which read as
+ * "space reserved for Safari's toolbar". The indicator only needs a little
+ * clearance so it doesn't sit on top of the labels, not the whole inset, so
+ * this clamps it. Keeps the bar around 67px, and collapses to the bar's own
+ * padding on devices with no indicator (inset 0).
+ *
+ * Only for chrome that is genuinely flush with the bottom of the screen. An
+ * element with something else below it (a page action bar above this tab bar,
+ * say) needs no bottom inset at all.
+ */
+@utility pb-home-indicator {
+  padding-bottom: min(env(safe-area-inset-bottom), 6px);
+}
 @utility pl-safe {
   padding-left: env(safe-area-inset-left);
 }
@@ -148,5 +166,43 @@ button {
     transition: none;
     transform: none;
     opacity: 1;
+  }
+}
+
+/*
+ * Rest-timer "time's up" flash. This is the alert of record when the ring
+ * switch is on silent, so it pulses several times rather than fading once —
+ * it has to survive being glanced at rather than watched.
+ */
+@keyframes rest-flash {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  10%,
+  30%,
+  50% {
+    opacity: 0.5;
+  }
+  20%,
+  40%,
+  60% {
+    opacity: 0;
+  }
+}
+
+@utility animate-rest-flash {
+  animation: rest-flash 6s ease-in-out 1 forwards;
+}
+
+/*
+ * Not disabled under reduced-motion: this is an alert, not decoration, and on
+ * silent it's the only thing telling you rest is over. Softened to a single
+ * steady hold instead of a pulse train.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .animate-rest-flash {
+    animation: none;
+    opacity: 0.35;
   }
 }

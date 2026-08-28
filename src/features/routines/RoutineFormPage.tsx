@@ -15,6 +15,7 @@ import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { ExercisePickerSheet } from '../exercises/ExercisePickerSheet'
 import { useExerciseById } from '../exercises/useExercises'
+import { defaultRestSecondsFor } from '../../lib/restTimer'
 import type { Exercise, Routine, RoutineExercise } from '../../db/types'
 import { RoutineExerciseRow } from './RoutineExerciseRow'
 import { createRoutine, deleteRoutine, updateRoutine, useRoutine } from './useRoutines'
@@ -59,7 +60,13 @@ function RoutineFormFields({
     if (exercises.some((re) => re.exerciseId === exerciseId)) return
     setExercises((prev) => [
       ...prev,
-      { exerciseId, targetSets: DEFAULT_TARGET_SETS, targetRepRange: DEFAULT_REP_RANGE },
+      {
+        exerciseId,
+        targetSets: DEFAULT_TARGET_SETS,
+        targetRepRange: DEFAULT_REP_RANGE,
+        // Seeded, not fixed — the row's rest stepper edits it from here.
+        restTimerSeconds: defaultRestSecondsFor(exerciseById.get(exerciseId)),
+      },
     ])
   }
 

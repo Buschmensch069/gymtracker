@@ -1,6 +1,7 @@
 import { Outlet } from 'react-router-dom'
 import { useAppViewportHeight } from '../../hooks/useAppViewportHeight'
 import { ActiveWorkoutBanner } from '../../features/workout/ActiveWorkoutBanner'
+import { RestTimerController } from '../../features/workout/RestTimerController'
 import { BottomTabBar } from './BottomTabBar'
 
 export function AppShell() {
@@ -19,6 +20,9 @@ export function AppShell() {
       </div>
       <ActiveWorkoutBanner />
       <BottomTabBar />
+      {/* Mounted once: owns the wake lock, the alarm and the flash. The
+          countdown readouts elsewhere are pure display. */}
+      <RestTimerController />
     </div>
   )
 }

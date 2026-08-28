@@ -3,6 +3,7 @@ import { useLastSessionSet } from '../../hooks/useLastSessionSet'
 import { weightForDisplay, weightStep, weightToKg } from '../../lib/units'
 import { WeightRepsInput } from './WeightRepsInput'
 import { deleteSet, updateSet } from './useActiveWorkout'
+import { startRestTimer } from './useRestTimer'
 
 const TYPE_ABBREVIATION: Record<SetType, string> = {
   warmup: 'W',
@@ -19,9 +20,12 @@ const RPE_CYCLE: (number | undefined)[] = [undefined, 6, 6.5, 7, 7.5, 8, 8.5, 9,
 interface SetLogRowProps {
   set: SetLog
   unit: UnitPreference
+  /** Resolved rest for this exercise; 0 disables the timer for it. */
+  restSeconds: number
+  exerciseName: string | undefined
 }
 
-export function SetLogRow({ set, unit }: SetLogRowProps) {
+export function SetLogRow({ set, unit, restSeconds, exerciseName }: SetLogRowProps) {
   const lastSession = useLastSessionSet(set.exerciseId, set.workoutId)
   const touched = set.touched ?? true
 
@@ -62,7 +66,15 @@ export function SetLogRow({ set, unit }: SetLogRowProps) {
 
         <button
           type="button"
-          onClick={() => updateSet(set.id, { completed: !set.completed, timestamp: Date.now() })}
+          onClick={() => {
+            const completed = !set.completed
+            updateSet(set.id, { completed, timestamp: Date.now() })
+            // Synchronously inside the tap: startRestTimer primes the
+            // AudioContext, and iOS only allows that from a user gesture.
+            // Un-completing a set is a correction, not a finished set, so it
+            // deliberately leaves any running timer alone.
+            if (completed) startRestTimer(restSeconds, exerciseName)
+          }}
           aria-label="Mark set complete"
           className={`ml-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-xl font-bold ${
             set.completed ? 'bg-accent text-accent-fg' : 'bg-surface-2 text-slate-500'
