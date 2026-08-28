@@ -321,26 +321,34 @@ old version silently breaks upgrades for anyone not starting from empty.
     `visualViewport.offsetTop` is pinned back to 0 (unless an input is
     focused) — iOS can leave the visual viewport scrolled down after a
     keyboard dismissal, which slides the header off the top of the screen.
-- **UNRESOLVED: a ~59px band along the bottom of the screen in standalone.**
-  Five rounds have failed on it. Do not start a sixth by guessing; read this
-  first. Ruled out by measurement, not by argument: the tab bar's own padding
-  (measured 6px, height ~67, flush with `innerHeight`); `pb-safe` vs
-  `pb-home-indicator` and the clamped `min(env(...), 6px)`; and CSS background
-  propagation (with `html` painted opaque, the canvas took `html`'s colour, not
-  `body`'s — so it is not a paint anomaly). Still open: whether the band is
-  ours at all, or iOS painting its own window background outside our content,
-  in which case no CSS reaches it and the manifest `background_color` is the
-  only lever. The live test for that is a garish `background_color` plus a
-  contrasting `body` background — and note iOS caches the manifest at install
-  time, so the home-screen icon must be deleted and re-added or the test
-  silently returns the old colour.
+- **The ~59px band at the bottom of the screen in standalone: the small
+  viewport is not the large viewport.** Five rounds missed this. Clean
+  measurements (no probe perturbing anything), 852pt iPhone, installed:
+  `innerHeight`, `documentElement.clientHeight`, `body.clientHeight`,
+  `100dvh`, `100svh` and an absolutely-positioned `height: 100%` **all agree
+  at 793**; `100vh`, `100lvh` and `screen.height` are **852**. So the layout
+  viewport genuinely is 793 and every percentage/`dvh` chain resolves to it
+  correctly — while the document's canvas still paints across the full 852,
+  which is why body's background shows in the band (confirmed: with a garish
+  `background_color` and a contrasting `body` colour, the band came up
+  **body's** colour, not the manifest's — it is ours, not iOS's window).
+  On iOS 26+ the status bar area is excluded from the *small/dynamic*
+  viewport but included in the *large* one, and `vh` is defined against the
+  large viewport — so `100vh` and `100dvh` differ by the 59px top inset here.
+  That means `--app-height`'s `@supports (height: 100dvh)` upgrade is what
+  sizes the app to 793: the `100vh` fallback it replaces would have been 852.
+  Ruled out along the way, by measurement rather than argument: the tab bar's
+  own padding (6px, height ~67, flush with `innerHeight`); `pb-safe` vs
+  `pb-home-indicator` and the clamped `min(env(...), 6px)`; background
+  propagation; and the manifest `background_color`.
 
-  A round-4 conclusion that the initial containing block is inset 59px from
-  the layout viewport (`documentElement.clientHeight` 793 against `100dvh`
-  852) is **retracted**: those numbers were taken while the probe itself
-  forced `overflow: visible` on `html`/`body`/`#root`, and `innerHeight` read
-  793 without it. The `html, body { height: var(--app-height) }` change that
-  followed fixed nothing on device and has been reverted to `height: 100%`.
+  Two retractions, both from round 4, both caused by the probe: the claim
+  that the initial containing block is inset 59px from the layout viewport is
+  **false** (those numbers were taken while the probe forced
+  `overflow: visible` on `html`/`body`/`#root`), and the
+  `html, body { height: var(--app-height) }` change made on its strength was
+  a **no-op** — `height: 100%` and `var(--app-height)` both resolve to 793.
+  It has been reverted.
 - **Any viewport probe must not perturb what it measures, and must be read
   visually.** Four measurement errors, in the order they cost a round:
   - Deriving the gap as `innerHeight - rect.bottom` is structurally blind to
@@ -497,6 +505,21 @@ silently re-added, and future corrections to seed data can be shipped by
 bumping `SEED_VERSION` without touching user edits or custom exercises.
 
 ## Storage & Backups
+
+**Removing the home screen icon deletes the database.** Confirmed on device:
+deleting the installed web app and re-adding it wiped IndexedDB completely.
+The icon is not a shortcut to a website — it *is* the storage container, and
+its site data goes with it. Persistent storage does not protect against this;
+`navigator.storage.persist()` only stops the OS evicting data under pressure,
+it has no say in an uninstall the user asked for.
+
+This matters because deleting and re-adding the icon is the only way to make
+iOS pick up a changed web app manifest (it caches the manifest at install
+time), so it is a genuinely tempting thing to do while debugging. **Export
+first, every time.** The JSON export in Settings is the only recovery path
+that exists — no cloud copy, no backup, and iCloud device backups do not
+reliably carry a web app's IndexedDB. A wipe with no recent export is
+permanent, total data loss.
 
 There's no cloud sync, so IndexedDB eviction is real data loss — these two
 mechanisms exist to reduce that risk:
