@@ -97,6 +97,42 @@
   }
 }
 
+/*
+ * Standalone gets the LARGE viewport, not the dynamic one.
+ *
+ * On iOS 26+ the status bar area is excluded from the small/dynamic viewport
+ * but included in the large one, so in an installed web app `100dvh` comes out
+ * one top-inset short of the screen — measured 793 against `100lvh`/`100vh`/
+ * `screen.height` of 852 on an 852pt iPhone, with `innerHeight`,
+ * `documentElement.clientHeight` and every percentage chain agreeing at 793.
+ * The leftover 59px is still painted by the document's canvas (body's
+ * background reaches it) but sits outside the layout viewport, so no element
+ * and no `position: fixed` bottom bar can occupy it. That band is what five
+ * rounds of padding and height fixes were chasing.
+ *
+ * The only thing `dvh` buys over `lvh` is tracking collapsible browser chrome,
+ * and standalone has none — so the large viewport is both correct and stable
+ * here. In a browser tab `dvh` still wins; see the note above.
+ *
+ * Keyed off `[data-standalone]` (stamped by `markStandaloneDisplay()` from
+ * main.tsx) rather than `@media (display-mode: standalone)`, because iOS does
+ * not reliably match that media query — which is exactly why
+ * `isStandaloneDisplay()` checks `navigator.standalone` as well. Driving the
+ * CSS from the same helper the JS uses stops the two disagreeing about which
+ * mode we're in, and if the detection is ever wrong both are wrong together
+ * rather than fighting.
+ *
+ * The `@supports` guard is load-bearing, not decoration: a custom property
+ * accepts `100lvh` as a raw token even on an engine that doesn't know the
+ * unit, so without the guard `height: var(--app-height)` would be invalid at
+ * computed-value time and collapse to `auto`.
+ */
+@supports (height: 100lvh) {
+  html[data-standalone] {
+    --app-height: 100lvh;
+  }
+}
+
 * {
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
@@ -108,10 +144,22 @@
  * standalone mode would let the document itself scroll/rubber-band (content
  * drifting down, header/tab bar moving) whenever inner content overflowed
  * even slightly, e.g. during the keyboard open/close resize.
+ *
+ * `var(--app-height)`, not `height: 100%`. A percentage here resolves against
+ * the initial containing block, which is the *small* viewport — 793 on the
+ * 852pt device — so with `#root` sized to the large viewport (`100lvh`, 852)
+ * body would be 59px shorter than its own child and, being `overflow: hidden`,
+ * would clip the app straight back to 793. The whole chain has to move
+ * together or the `--app-height` fix is inert.
+ *
+ * Note this is NOT the change reverted in 6a09de2. That one set the same
+ * declaration while `--app-height` was `100dvh` (793), making it a no-op
+ * against `height: 100%`; it is load-bearing only now that standalone resolves
+ * `--app-height` to 852.
  */
 html,
 body {
-  height: 100%;
+  height: var(--app-height);
   margin: 0;
   overflow: hidden;
   overscroll-behavior: none;

@@ -14,3 +14,17 @@ export function isStandaloneDisplay(): boolean {
   const iosStandalone = (window.navigator as Navigator & { standalone?: boolean }).standalone
   return iosStandalone === true || window.matchMedia('(display-mode: standalone)').matches
 }
+
+/**
+ * Stamp `data-standalone` on `<html>` so CSS can branch on display mode using
+ * this same detection. `@media (display-mode: standalone)` alone is not enough
+ * on iOS — see above — and `--app-height` needs the answer (`index.css` sizes
+ * the app off the large viewport in standalone and the dynamic one in a
+ * browser tab). Call once, before first render.
+ */
+export function markStandaloneDisplay(): void {
+  if (typeof document === 'undefined') return
+  if (isStandaloneDisplay()) {
+    document.documentElement.dataset.standalone = 'true'
+  }
+}

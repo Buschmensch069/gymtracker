@@ -342,6 +342,25 @@ old version silently breaks upgrades for anyone not starting from empty.
   `pb-home-indicator` and the clamped `min(env(...), 6px)`; background
   propagation; and the manifest `background_color`.
 
+  **Fix applied (pending device confirmation):** `--app-height` resolves to
+  `100lvh` in standalone via `html[data-standalone]` in `index.css`, stamped
+  by `markStandaloneDisplay()` from `main.tsx` — an attribute rather than
+  `@media (display-mode: standalone)` because iOS does not reliably match that
+  query, so CSS and `isStandaloneDisplay()` share one answer. `html`, `body`
+  and `#root` all take `var(--app-height)` together: a percentage on html/body
+  resolves against the ICB (the small viewport, 793), and since body is
+  `overflow: hidden` it would clip an 852px `#root` back to 793 and make the
+  fix inert. `useAppViewportHeight` no longer clamps to `window.innerHeight`
+  in standalone for the same reason — it probes `var(--app-height)` instead.
+
+  **The way this fix fails, if it fails:** content sized past the layout
+  viewport may simply be clipped at 793 by the viewport itself, in which case
+  nothing can put real content in the band and only the canvas background will
+  ever reach it — the remedy then is to match that background to the tab bar
+  rather than to keep chasing height. The evidence that it might work is that
+  the rendering surface demonstrably extends to 852 (body's background paints
+  there) and the UA reports a large viewport of 852.
+
   Two retractions, both from round 4, both caused by the probe: the claim
   that the initial containing block is inset 59px from the layout viewport is
   **false** (those numbers were taken while the probe forced
