@@ -17,6 +17,18 @@
   --color-accent-fg: #05242b;
 }
 
+/*
+ * Safe-area insets. These set padding outright and are emitted *after*
+ * Tailwind's own padding utilities, so `py-3 pt-safe` on one element does not
+ * add up — pt-safe wins and the element loses its top padding entirely.
+ * Put the inset on a wrapper and the visual padding on the child inside it
+ * (see PageHeader.tsx / Sheet.tsx) rather than combining them.
+ *
+ * The insets are also mode-dependent: real values in standalone (status bar,
+ * home indicator), almost always 0 in a browser tab. So an element relying on
+ * pt-safe alone for its spacing looks fine installed and flush-to-the-edge
+ * in-browser.
+ */
 @utility pt-safe {
   padding-top: env(safe-area-inset-top);
 }

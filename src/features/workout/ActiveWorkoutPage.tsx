@@ -99,13 +99,18 @@ export function ActiveWorkoutPage() {
         ))}
       </div>
 
-      <div className="flex shrink-0 gap-2 border-t border-border px-4 py-3 pb-safe">
-        <Button variant="secondary" fullWidth onClick={() => setShowAddExercise(true)}>
-          Add Exercise
-        </Button>
-        <Button fullWidth onClick={() => finishWorkout(activeWorkout.id)}>
-          Finish
-        </Button>
+      {/* pb-safe on its own wrapper — it overrides py-3's bottom padding if
+          they share an element, which zeroes the action bar's padding
+          in-browser (inset 0). See PageHeader for the same split. */}
+      <div className="shrink-0 border-t border-border pb-safe">
+        <div className="flex gap-2 px-4 py-3">
+          <Button variant="secondary" fullWidth onClick={() => setShowAddExercise(true)}>
+            Add Exercise
+          </Button>
+          <Button fullWidth onClick={() => finishWorkout(activeWorkout.id)}>
+            Finish
+          </Button>
+        </div>
       </div>
 
       {showAddExercise && (

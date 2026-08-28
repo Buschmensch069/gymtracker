@@ -228,10 +228,27 @@ old version silently breaks upgrades for anyone not starting from empty.
   `node scripts/validate_palette.js` against this app's `#0b0f14` surface);
   the other 5 (forearms, calves, core, cardio, fullBody — rarely a
   *primary* tag in this app's seed data) get muted tones. The weekly-sets
-  chart caps at those 8 stackable series and folds anything else into a
-  muted "Other" segment — see `CHART_MUSCLE_PRIORITY` — rather than
-  generating a 9th hue. Extend `MUSCLE_COLORS`/`CHART_MUSCLE_PRIORITY`
-  together if a muscle's prominence should change.
+  chart caps at 8 stackable series and folds anything past that into a
+  muted "Other" segment rather than generating a 9th hue. **The fold is by
+  rank overflow, applied after the chart's filter chips, not by
+  priority-list membership**: the chart ranks the muscles that survived the
+  filter by `CHART_MUSCLE_SERIES_ORDER` (the priority 8 first, then the
+  muted remainder), names the first 8, folds only the rest. Folding over
+  the unfiltered set would put muscles the user just excluded back on the
+  chart as a grey bar; and selecting a single non-priority muscle must
+  render one named series, not a lone "Other". Extend
+  `MUSCLE_COLORS`/`CHART_MUSCLE_PRIORITY` together if a muscle's prominence
+  should change.
+- **Chart filter chips are filter-IN.** In `WeeklyMuscleSetsChart`, an
+  empty selection means "All"; tapping a chip *selects* that muscle
+  (multi-select accumulates), and deselecting the last one falls back to
+  All. The chips are hidden in the Upper/Lower and Push/Pull/Legs modes and
+  deliberately don't apply there — an invisible control shouldn't silently
+  drop data.
+- **A grey "Other" segment always names its contents.** The chart's custom
+  tooltip lists which muscles are inside the fold for that week (carried on
+  the row under `OTHER_PARTS_KEY`), in both the by-muscle and the grouped
+  modes. Never ship an unexplained "Other" bar.
 - **`src/lib/analytics.ts`** is the single source of truth for
   tonnage/PR/muscle-set-weighting definitions — extend it there, don't
   recompute a metric inline in a chart or card component. In particular:
@@ -263,10 +280,40 @@ old version silently breaks upgrades for anyone not starting from empty.
 - iOS Safari never fires `beforeinstallprompt`. Don't build install-prompt
   logic around that event; it will never fire there.
 - Standalone-mode detection: check both `window.navigator.standalone`
-  (iOS-specific) and `window.matchMedia('(display-mode: standalone)')`.
+  (iOS-specific) and `window.matchMedia('(display-mode: standalone)')` —
+  `isStandaloneDisplay()` in `src/lib/standalone.ts` is the one place that
+  does this; don't re-roll the check inline.
 - Root layout height uses `100dvh` (with a `100vh` fallback via
   `@supports`) — never bare `100vh`, which on iOS Safari includes the area
   under the collapsible URL bar and causes layout jump.
+- **Standalone and in-browser need different viewport handling.**
+  `useAppViewportHeight()` (`src/hooks/`) is a *corrective* layer over that
+  CSS height, and returns `undefined` (meaning "let `100dvh` own it")
+  whenever no correction is warranted:
+  - *In a browser tab* the usable height genuinely moves as the URL bar and
+    bottom toolbar collapse, and iOS Safari's `dvh` under/over-corrects
+    through those transitions — so track `visualViewport.height`
+    continuously there.
+  - *Installed (standalone)* there is no browser chrome at all, so `100dvh`
+    is already exact. Overriding it is actively harmful: any measurement
+    taken mid-transition (launch animation, app switcher, rotation) is
+    smaller than the screen and freezes into the layout as an inline pixel
+    height, leaving a dead band at the bottom that reads as space reserved
+    for a toolbar that isn't there. So standalone only overrides while the
+    keyboard is actually open (`visualViewport.height` below
+    `window.innerHeight` by more than `KEYBOARD_MIN_SHRINK_PX`).
+  - The result is clamped to `window.innerHeight`, and a non-zero
+    `visualViewport.offsetTop` is pinned back to 0 (unless an input is
+    focused) — iOS can leave the visual viewport scrolled down after a
+    keyboard dismissal, which slides the header off the top of the screen.
+- **Safe-area utilities set padding outright, so never combine them with a
+  `py-*`/`px-*` on the same element.** `pt-safe`/`pb-safe` are emitted
+  after Tailwind's own padding utilities, so `py-3 pt-safe` loses the `py-3`
+  top padding entirely — which put the page title flush against the bottom
+  edge of the status bar in standalone (inset ≈ 59px, zero gap) and flush
+  against the very top of the viewport in-browser (inset 0). Put the inset
+  on a wrapper and the visual padding on the child inside it; see
+  `PageHeader.tsx`, `Sheet.tsx`, and `ActiveWorkoutPage`'s action bar.
 - `apple-touch-icon` is referenced via an explicit `<link>` tag in
   `index.html`, not just the manifest `icons` array — iOS does not reliably
   read it from the manifest.

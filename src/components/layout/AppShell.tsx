@@ -1,18 +1,18 @@
 import { Outlet } from 'react-router-dom'
-import { useVisualViewportHeight } from '../../hooks/useVisualViewportOffset'
+import { useAppViewportHeight } from '../../hooks/useAppViewportHeight'
 import { ActiveWorkoutBanner } from '../../features/workout/ActiveWorkoutBanner'
 import { BottomTabBar } from './BottomTabBar'
 
 export function AppShell() {
-  // CSS `dvh` (see index.css) handles the common case; this is a JS-corrective
-  // layer for iOS Safari edge cases where `dvh` under/over-corrects as the
-  // on-screen keyboard opens.
-  const visualViewportHeight = useVisualViewportHeight()
+  // CSS `dvh` (see index.css) owns the height in standalone, where it's exact.
+  // This hook only returns a value when a JS correction is actually warranted
+  // — in-browser chrome collapse, or an open keyboard. See the hook's docs.
+  const viewportHeight = useAppViewportHeight()
 
   return (
     <div
       className="flex h-full flex-col overflow-hidden"
-      style={visualViewportHeight ? { height: visualViewportHeight } : undefined}
+      style={viewportHeight ? { height: viewportHeight } : undefined}
     >
       <div className="flex flex-1 flex-col overflow-hidden">
         <Outlet />
