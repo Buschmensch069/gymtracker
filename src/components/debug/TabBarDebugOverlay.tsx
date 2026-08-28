@@ -1,27 +1,31 @@
 import { useEffect, useState } from 'react'
 
 /**
- * TEMPORARY diagnostic overlay for the tab bar's bottom strip.
+ * TEMPORARY diagnostic overlay for the dark strip below the tab bar.
  *
  * Delete this file, its import in AppShell.tsx, and the <TabBarDebugOverlay />
  * element once the numbers have been read off the device.
  *
- * Three candidate causes, and three probes that separate them:
+ * The tab bar itself is now measured correct (padding 6px, height ~67, bottom
+ * edge flush with innerHeight), so the strip is not the nav's box. The question
+ * this round is whether the strip is inside the layout viewport at all.
  *
- * - `probe inline min()` sets `min(env(safe-area-inset-bottom), 6px)` as an
- *   INLINE style, bypassing the class and the cascade entirely. If this reads
- *   34px, iOS isn't clamping the min() and the CSS value itself is wrong.
- * - `probe .pb-home-indicator` applies the emitted utility class to a bare div
- *   with nothing competing. If the inline probe is 6px but this is 34px, the
- *   rule isn't reaching the element — dropped, or losing the cascade.
- * - `nav padBottom` is the real tab bar. If both probes are 6px and this is
- *   34px, something else on the nav is winning.
+ * The decisive test is visual, not numeric: html, body and #root are painted
+ * three different colours, so one screenshot says which box the strip belongs
+ * to. A magenta hairline is pinned at `position:fixed; bottom:0`, which is by
+ * definition the bottom edge of the layout viewport — anything below that line
+ * is outside it and no amount of padding or flex work inside the app can reach
+ * it.
  *
- * `RULES ON NAV` then names every stylesheet rule that both matches the nav and
- * sets a bottom padding, in document order — later wins at equal specificity,
- * which is exactly how the original pt-safe/py-3 collision worked. And
- * `label→nav gap` vs `nav padBottom` answers whether the strip is the nav's
- * padding at all or something sitting below the icon row.
+ * Leading hypothesis from the numbers already collected: the previous overlay
+ * reported 100dvh = innerHeight = #root height = 793 while 100lvh = 852. If the
+ * visible screen really is 852 tall, then `#root { height: 100dvh }` leaves 59
+ * unpainted px at the bottom showing the canvas background — which is dark, and
+ * would look exactly like a reserved strip. Note the first overlay's "GAP BELOW
+ * TABBAR" was computed as `innerHeight - navRect.bottom` and so was structurally
+ * blind to a gap that lives *below* innerHeight; it reported 0 and I read that
+ * as "no dead band". That is the measurement error that sent the last two
+ * rounds after the padding.
  */
 
 interface Row {
@@ -30,125 +34,90 @@ interface Row {
   flag?: boolean
 }
 
-/** Walks @layer / @media / @supports nesting — Tailwind v4 puts utilities inside a layer. */
-function collectStyleRules(list: CSSRuleList, out: CSSStyleRule[]): void {
-  for (const rule of Array.from(list)) {
-    if (rule instanceof CSSStyleRule) {
-      out.push(rule)
-    } else {
-      const nested = (rule as CSSRule & { cssRules?: CSSRuleList }).cssRules
-      if (nested) collectStyleRules(nested, out)
-    }
-  }
-}
+/** html / body / #root each get a distinct colour so the strip can be attributed by eye. */
+const PAINT = `
+  html { background: #b91c1c !important; }
+  body { background: #65a30d !important; }
+  #root { background: #0b0f14 !important; }
+`
 
-function allStyleRules(): CSSStyleRule[] {
-  const out: CSSStyleRule[] = []
-  for (const sheet of Array.from(document.styleSheets)) {
-    try {
-      if (sheet.cssRules) collectStyleRules(sheet.cssRules, out)
-    } catch {
-      // Cross-origin sheet — none of ours, skip.
-    }
-  }
-  return out
+function px(n: number | undefined | null): string {
+  return n === undefined || n === null ? '—' : String(Math.round(n * 100) / 100)
 }
 
 function measure(): Row[] {
   const rows: Row[] = []
   const push = (key: string, value: string, flag = false) => rows.push({ key, value, flag })
 
-  // --- probes: inline value, then the emitted class, on throwaway elements ---
+  // --- the meta tag, read live from the DOM rather than from the repo ---
+  const meta = document.querySelector('meta[name="viewport"]')
+  const content = meta?.getAttribute('content') ?? '(NO META)'
+  push('viewport-fit=cover', content.includes('viewport-fit=cover') ? 'YES' : 'MISSING', !content.includes('viewport-fit=cover'))
+
+  // --- probes: viewport units and the real bottom edge ---
   const host = document.createElement('div')
   host.style.cssText = 'position:fixed;top:0;left:0;visibility:hidden;pointer-events:none'
-  const inlineMin = document.createElement('div')
-  inlineMin.style.paddingBottom = 'min(env(safe-area-inset-bottom), 6px)'
-  const inlineEnv = document.createElement('div')
-  inlineEnv.style.paddingBottom = 'env(safe-area-inset-bottom)'
-  const viaClass = document.createElement('div')
-  viaClass.className = 'pb-home-indicator'
-  host.append(inlineMin, inlineEnv, viaClass)
+  const mk = (h: string) => {
+    const d = document.createElement('div')
+    d.style.height = h
+    host.append(d)
+    return d
+  }
+  const dvh = mk('100dvh')
+  const svh = mk('100svh')
+  const lvh = mk('100lvh')
+  const inset = document.createElement('div')
+  inset.style.cssText = 'padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)'
+  host.append(inset)
   document.body.append(host)
-  const inlineMinPad = getComputedStyle(inlineMin).paddingBottom
-  const inlineEnvPad = getComputedStyle(inlineEnv).paddingBottom
-  const viaClassPad = getComputedStyle(viaClass).paddingBottom
-  // Did the browser even keep the inline declaration, or reject it as invalid?
-  const inlineMinKept = inlineMin.style.paddingBottom || '(REJECTED)'
+  const insetCs = getComputedStyle(inset)
+  const dvhH = dvh.getBoundingClientRect().height
+  const svhH = svh.getBoundingClientRect().height
+  const lvhH = lvh.getBoundingClientRect().height
+  const insetTop = insetCs.paddingTop
+  const insetBottom = insetCs.paddingBottom
   host.remove()
 
-  push('inset bottom (env)', inlineEnvPad)
-  push('probe inline min()', inlineMinPad, inlineMinPad !== '6px')
-  push('  inline decl kept', inlineMinKept, inlineMinKept === '(REJECTED)')
-  push('probe .pb-home-ind', viaClassPad, viaClassPad !== '6px')
-
-  // --- the real tab bar ---
   const nav = document.querySelector('nav')
-  if (!nav) {
-    push('nav', 'NOT FOUND', true)
-    return rows
-  }
-  const navCs = getComputedStyle(nav)
-  const navRect = nav.getBoundingClientRect()
-  push('nav h', String(Math.round(navRect.height * 100) / 100))
-  push('nav padBottom', navCs.paddingBottom, navCs.paddingBottom !== '6px')
-  push('nav borderBottom', navCs.borderBottomWidth)
-  push('nav inline pad', nav.style.paddingBottom || '(none)')
-  push('nav class', nav.className.replace(/^flex shrink-0 /, '…'))
+  const navBottom = nav?.getBoundingClientRect().bottom
+  const root = document.getElementById('root')
+  const rootRect = root?.getBoundingClientRect()
 
-  // --- is the strip padding at all, or something below the icon row? ---
-  const link = nav.querySelector('a')
-  const label = link?.querySelector('span')
-  const icon = link?.querySelector('svg')
-  if (link && label) {
-    const linkRect = link.getBoundingClientRect()
-    const labelRect = label.getBoundingClientRect()
-    push('link h', String(Math.round(linkRect.height * 100) / 100))
-    push('icon→label→link gaps', icon
-      ? `${Math.round(labelRect.top - icon.getBoundingClientRect().bottom)}/${Math.round(linkRect.bottom - labelRect.bottom)}`
-      : String(Math.round(linkRect.bottom - labelRect.bottom)))
-    // The whole question: how much room sits under the last painted text,
-    // and is it accounted for by the nav's own padding + border?
-    const below = navRect.bottom - labelRect.bottom
-    push('label→nav bottom', String(Math.round(below * 100) / 100), below > 30)
-    push('link→nav bottom', String(Math.round((navRect.bottom - linkRect.bottom) * 100) / 100))
-  }
+  // A fixed bottom:0 element sits on the layout viewport's bottom edge by
+  // definition. This is the line the strip is measured against.
+  const edge = document.createElement('div')
+  edge.style.cssText = 'position:fixed;left:0;bottom:0;height:1px;width:1px;visibility:hidden'
+  document.body.append(edge)
+  const edgeBottom = edge.getBoundingClientRect().bottom
+  edge.remove()
 
-  // --- cascade: every matching rule that sets a bottom padding, in order ---
-  const matching: string[] = []
-  let sawUtility = false
-  for (const rule of allStyleRules()) {
-    const pb = rule.style.paddingBottom || rule.style.getPropertyValue('padding-block')
-    if (rule.selectorText === '.pb-home-indicator') sawUtility = true
-    if (!pb) continue
-    try {
-      if (nav.matches(rule.selectorText)) matching.push(`${rule.selectorText} = ${pb}`)
-    } catch {
-      // Selector this browser can't parse — not one of ours.
-    }
-  }
-  push('.pb-home-ind in CSS', sawUtility ? 'yes' : 'NO — NOT EMITTED', !sawUtility)
-  matching.forEach((entry, i) => push(`RULE ON NAV ${i + 1}`, entry))
-  if (matching.length === 0) push('RULES ON NAV', 'none match', true)
-  if (matching.length > 1) push('  (last one wins)', `${matching.length} competing`, true)
+  push('nav rect.bottom', px(navBottom))
+  push('window.innerHeight', px(window.innerHeight))
+  push('docEl.clientHeight', px(document.documentElement.clientHeight))
+  push('fixed bottom:0 edge', px(edgeBottom))
+  push('#root rect top/bot', `${px(rootRect?.top)} / ${px(rootRect?.bottom)}`)
+  push('body rect height', px(document.body.getBoundingClientRect().height))
+  push('docEl rect height', px(document.documentElement.getBoundingClientRect().height))
 
-  // --- ancestor chain ---
-  let node: HTMLElement | null = nav.parentElement
-  let depth = 0
-  while (node && depth < 6) {
-    const cs = getComputedStyle(node)
-    if (cs.paddingBottom !== '0px' || cs.marginBottom !== '0px') {
-      const tag = node.id ? `#${node.id}` : node.tagName.toLowerCase()
-      push(`anc ${depth} ${tag}`, `pb=${cs.paddingBottom} mb=${cs.marginBottom}`, true)
-    }
-    node = node.parentElement
-    depth += 1
-  }
+  push('100dvh', px(dvhH))
+  push('100svh', px(svhH))
+  push('100lvh', px(lvhH), lvhH !== dvhH)
+  push('lvh − dvh', px(lvhH - dvhH), lvhH - dvhH > 1)
 
-  // --- which build is live ---
-  const cssHref = Array.from(document.styleSheets)
-    .map((s) => s.href)
-    .find((href) => href?.includes('/assets/'))
-  push('css bundle', cssHref ? cssHref.split('/').pop()! : '(inline/dev)')
+  push('screen.height', px(window.screen?.height))
+  push('screen.availHeight', px(window.screen?.availHeight))
+
+  const vv = window.visualViewport
+  push('vv h / offTop / pgTop', `${px(vv?.height)} / ${px(vv?.offsetTop)} / ${px(vv?.pageTop)}`)
+
+  push('inset top / bottom', `${insetTop} / ${insetBottom}`)
+
+  // --- the answers ---
+  if (navBottom !== undefined) {
+    push('nav→viewport bottom', px(edgeBottom - navBottom), edgeBottom - navBottom > 1)
+  }
+  push('viewport→screen bot', px(lvhH - edgeBottom), lvhH - edgeBottom > 1)
+  push('#root→viewport bot', px(edgeBottom - (rootRect?.bottom ?? 0)), (edgeBottom - (rootRect?.bottom ?? 0)) > 1)
 
   return rows
 }
@@ -158,11 +127,16 @@ export function TabBarDebugOverlay() {
   const [hidden, setHidden] = useState(false)
 
   useEffect(() => {
+    const style = document.createElement('style')
+    style.textContent = PAINT
+    document.head.append(style)
+
     const update = () => setRows(measure())
     update()
     window.addEventListener('resize', update)
     window.addEventListener('orientationchange', update)
     return () => {
+      style.remove()
       window.removeEventListener('resize', update)
       window.removeEventListener('orientationchange', update)
     }
@@ -171,46 +145,66 @@ export function TabBarDebugOverlay() {
   if (hidden) return null
 
   return (
-    <div
-      onClick={() => setHidden(true)}
-      style={{
-        position: 'fixed',
-        top: 'calc(env(safe-area-inset-top) + 4px)',
-        left: 4,
-        right: 4,
-        zIndex: 100,
-        maxHeight: '70vh',
-        overflowY: 'auto',
-        background: 'rgba(5,10,16,0.96)',
-        border: '1px solid rgba(255,0,180,0.7)',
-        borderRadius: 8,
-        padding: '6px 8px',
-        font: '10px/1.5 ui-monospace, SFMono-Regular, monospace',
-        color: '#e8eaed',
-      }}
-    >
-      <div style={{ fontWeight: 700, color: '#ff4fb8', marginBottom: 3 }}>
-        TAB BAR DEBUG — tap to hide
+    <>
+      {/* Bottom edge of the layout viewport. Anything below this line is
+          outside the page entirely — unreachable from CSS inside the app. */}
+      <div
+        style={{
+          position: 'fixed',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: 3,
+          background: '#ff00b4',
+          zIndex: 101,
+          pointerEvents: 'none',
+        }}
+      />
+      <div
+        onClick={() => setHidden(true)}
+        style={{
+          position: 'fixed',
+          top: 'calc(env(safe-area-inset-top) + 4px)',
+          left: 4,
+          right: 4,
+          zIndex: 100,
+          maxHeight: '68vh',
+          overflowY: 'auto',
+          background: 'rgba(5,10,16,0.96)',
+          border: '1px solid rgba(255,0,180,0.7)',
+          borderRadius: 8,
+          padding: '6px 8px',
+          font: '10px/1.5 ui-monospace, SFMono-Regular, monospace',
+          color: '#e8eaed',
+        }}
+      >
+        <div style={{ fontWeight: 700, color: '#ff4fb8', marginBottom: 2 }}>
+          VIEWPORT DEBUG — tap to hide
+        </div>
+        <div style={{ color: '#94a3b8', marginBottom: 4 }}>
+          strip RED = outside body · GREEN = body outside #root · DARK = inside #root ·
+          below the magenta line = outside the viewport
+        </div>
+        <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+          <tbody>
+            {rows.map(({ key, value, flag }) => (
+              <tr key={key}>
+                <td style={{ paddingRight: 8, color: '#94a3b8', whiteSpace: 'nowrap' }}>{key}</td>
+                <td
+                  style={{
+                    textAlign: 'right',
+                    wordBreak: 'break-all',
+                    color: flag ? '#ff4fb8' : '#e8eaed',
+                    fontWeight: flag ? 700 : 400,
+                  }}
+                >
+                  {value}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
-      <table style={{ borderCollapse: 'collapse', width: '100%' }}>
-        <tbody>
-          {rows.map(({ key, value, flag }) => (
-            <tr key={key}>
-              <td style={{ paddingRight: 8, color: '#94a3b8', whiteSpace: 'nowrap' }}>{key}</td>
-              <td
-                style={{
-                  textAlign: 'right',
-                  wordBreak: 'break-all',
-                  color: flag ? '#ff4fb8' : '#e8eaed',
-                  fontWeight: flag ? 700 : 400,
-                }}
-              >
-                {value}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    </>
   )
 }
