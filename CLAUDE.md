@@ -298,9 +298,12 @@ old version silently breaks upgrades for anyone not starting from empty.
   (iOS-specific) and `window.matchMedia('(display-mode: standalone)')` —
   `isStandaloneDisplay()` in `src/lib/standalone.ts` is the one place that
   does this; don't re-roll the check inline.
-- Root layout height uses `100dvh` (with a `100vh` fallback via
-  `@supports`) — never bare `100vh`, which on iOS Safari includes the area
-  under the collapsible URL bar and causes layout jump.
+- Root layout height is always `var(--app-height)` — never a percentage and
+  never a bare unit. It resolves to `100dvh` in a browser tab (with a `100vh`
+  fallback via `@supports`; bare `100vh` there includes the area under the
+  collapsible URL bar and causes layout jump) and to `100lvh` in standalone,
+  where the small and large viewports differ — see the band note below.
+  `html`, `body` and `#root` all take it together.
 - **Standalone and in-browser need different viewport handling.**
   `useAppViewportHeight()` (`src/hooks/`) is a *corrective* layer over that
   CSS height, and returns `undefined` (meaning "let `100dvh` own it")
@@ -309,8 +312,9 @@ old version silently breaks upgrades for anyone not starting from empty.
     bottom toolbar collapse, and iOS Safari's `dvh` under/over-corrects
     through those transitions — so track `visualViewport.height`
     continuously there.
-  - *Installed (standalone)* there is no browser chrome at all, so `100dvh`
-    is already exact. Overriding it is actively harmful: any measurement
+  - *Installed (standalone)* there is no browser chrome at all, so the CSS
+    height is already exact — `100lvh` there, not `100dvh`, per the band note
+    below. Overriding it is actively harmful: any measurement
     taken mid-transition (launch animation, app switcher, rotation) is
     smaller than the screen and freezes into the layout as an inline pixel
     height, leaving a dead band at the bottom that reads as space reserved
@@ -342,8 +346,8 @@ old version silently breaks upgrades for anyone not starting from empty.
   `pb-home-indicator` and the clamped `min(env(...), 6px)`; background
   propagation; and the manifest `background_color`.
 
-  **Fix applied (pending device confirmation):** `--app-height` resolves to
-  `100lvh` in standalone via `html[data-standalone]` in `index.css`, stamped
+  **Fix (confirmed on device — tab bar flush, no band, everything 852):**
+  `--app-height` resolves to `100lvh` in standalone via `html[data-standalone]` in `index.css`, stamped
   by `markStandaloneDisplay()` from `main.tsx` — an attribute rather than
   `@media (display-mode: standalone)` because iOS does not reliably match that
   query, so CSS and `isStandaloneDisplay()` share one answer. `html`, `body`
@@ -353,21 +357,21 @@ old version silently breaks upgrades for anyone not starting from empty.
   fix inert. `useAppViewportHeight` no longer clamps to `window.innerHeight`
   in standalone for the same reason — it probes `var(--app-height)` instead.
 
-  **The way this fix fails, if it fails:** content sized past the layout
-  viewport may simply be clipped at 793 by the viewport itself, in which case
-  nothing can put real content in the band and only the canvas background will
-  ever reach it — the remedy then is to match that background to the tab bar
-  rather than to keep chasing height. The evidence that it might work is that
-  the rendering surface demonstrably extends to 852 (body's background paints
-  there) and the UA reports a large viewport of 852.
+  So content sized past the small viewport *is* painted and laid out into the
+  band — the rendering surface really does extend to the large viewport, which
+  body's background reaching there had already hinted. The band was never
+  unreachable; every previous round was just sizing the app to the wrong one
+  of the two viewports.
 
   Two retractions, both from round 4, both caused by the probe: the claim
   that the initial containing block is inset 59px from the layout viewport is
   **false** (those numbers were taken while the probe forced
   `overflow: visible` on `html`/`body`/`#root`), and the
   `html, body { height: var(--app-height) }` change made on its strength was
-  a **no-op** — `height: 100%` and `var(--app-height)` both resolve to 793.
-  It has been reverted.
+  a **no-op** — at the time `--app-height` was `100dvh`, so both it and
+  `height: 100%` resolved to 793. That declaration is in the tree again today
+  and is not a reinstatement of the reverted change: it does real work only
+  because standalone now resolves the variable to 852.
 - **Any viewport probe must not perturb what it measures, and must be read
   visually.** Four measurement errors, in the order they cost a round:
   - Deriving the gap as `innerHeight - rect.bottom` is structurally blind to

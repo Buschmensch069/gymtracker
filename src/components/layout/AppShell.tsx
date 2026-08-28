@@ -2,12 +2,11 @@ import { Outlet } from 'react-router-dom'
 import { useAppViewportHeight } from '../../hooks/useAppViewportHeight'
 import { ActiveWorkoutBanner } from '../../features/workout/ActiveWorkoutBanner'
 import { RestTimerController } from '../../features/workout/RestTimerController'
-// TEMPORARY — remove with src/components/debug/ViewportReadout.tsx.
-import { ViewportReadout } from '../debug/ViewportReadout'
 import { BottomTabBar } from './BottomTabBar'
 
 export function AppShell() {
-  // CSS `dvh` (see index.css) owns the height in standalone, where it's exact.
+  // CSS `var(--app-height)` (see index.css) owns the height in standalone,
+  // where it's exact — `100lvh` there, `100dvh` in a browser tab.
   // This hook only returns a value when a JS correction is actually warranted
   // — in-browser chrome collapse, or an open keyboard. See the hook's docs.
   const viewportHeight = useAppViewportHeight()
@@ -25,7 +24,6 @@ export function AppShell() {
       {/* Mounted once: owns the wake lock, the alarm and the flash. The
           countdown readouts elsewhere are pure display. */}
       <RestTimerController />
-      <ViewportReadout />
     </div>
   )
 }
