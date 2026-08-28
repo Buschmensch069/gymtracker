@@ -108,10 +108,27 @@
  * standalone mode would let the document itself scroll/rubber-band (content
  * drifting down, header/tab bar moving) whenever inner content overflowed
  * even slightly, e.g. during the keyboard open/close resize.
+ *
+ * `var(--app-height)` here, NOT `height: 100%`. On iOS 26+ in a standalone
+ * web app those are no longer the same number: the initial containing block
+ * is inset by the status bar (docEl.clientHeight measured 793 on a 852pt
+ * iPhone) while the layout viewport that `dvh`/`vh`/`lvh` and
+ * `position: fixed` resolve against is the full 852. A percentage height
+ * chains off the ICB and lands 59px short — and since body is
+ * `overflow: hidden`, it then clipped `#root` (which was already correctly
+ * 852 via `--app-height`) back to 793, leaving an unfilled band at the
+ * bottom of the screen that looked exactly like padding under the tab bar.
+ *
+ * Three rounds of padding fixes chased that band because every box in the
+ * document measured 793 and agreed with itself. What separated the two
+ * chains was probing them side by side: `height: 100%` inside body and
+ * `100svh` landed at 793, while `100dvh`/`100vh`/`100lvh` and a fixed
+ * `height: 100%` landed at 852. So keep every box in this chain on a
+ * viewport unit; don't reintroduce a percentage height on html or body.
  */
 html,
 body {
-  height: 100%;
+  height: var(--app-height);
   margin: 0;
   overflow: hidden;
   overscroll-behavior: none;

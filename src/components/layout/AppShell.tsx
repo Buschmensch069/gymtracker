@@ -2,8 +2,6 @@ import { Outlet } from 'react-router-dom'
 import { useAppViewportHeight } from '../../hooks/useAppViewportHeight'
 import { ActiveWorkoutBanner } from '../../features/workout/ActiveWorkoutBanner'
 import { RestTimerController } from '../../features/workout/RestTimerController'
-// TEMPORARY — remove with src/components/debug/TabBarDebugOverlay.tsx.
-import { TabBarDebugOverlay } from '../debug/TabBarDebugOverlay'
 import { BottomTabBar } from './BottomTabBar'
 
 export function AppShell() {
@@ -25,7 +23,6 @@ export function AppShell() {
       {/* Mounted once: owns the wake lock, the alarm and the flash. The
           countdown readouts elsewhere are pure display. */}
       <RestTimerController />
-      <TabBarDebugOverlay />
     </div>
   )
 }

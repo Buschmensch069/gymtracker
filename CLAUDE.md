@@ -310,7 +310,10 @@ old version silently breaks upgrades for anyone not starting from empty.
     through those transitions — so track `visualViewport.height`
     continuously there.
   - *Installed (standalone)* there is no browser chrome at all, so `100dvh`
-    is already exact. Overriding it is actively harmful: any measurement
+    is already exact — it resolves to the full screen height. This stays
+    true on iOS 26+, where it is the *percentage* chain that goes wrong and
+    not `dvh`; see the ICB note below before concluding `dvh` is at fault
+    for a dead band. Overriding it is actively harmful: any measurement
     taken mid-transition (launch animation, app switcher, rotation) is
     smaller than the screen and freezes into the layout as an inline pixel
     height, leaving a dead band at the bottom that reads as space reserved
@@ -321,6 +324,36 @@ old version silently breaks upgrades for anyone not starting from empty.
     `visualViewport.offsetTop` is pinned back to 0 (unless an input is
     focused) — iOS can leave the visual viewport scrolled down after a
     keyboard dismissal, which slides the header off the top of the screen.
+- **Never size the root height chain with a percentage — `html`, `body` and
+  `#root` all use `var(--app-height)`.** On iOS 26+ in a standalone web app
+  the initial containing block and the layout viewport are no longer the
+  same box. Measured on an 852pt iPhone: `documentElement.clientHeight` was
+  **793** (the screen minus the 59px status-bar inset), while `100dvh`,
+  `100vh`, `100lvh` and `position: fixed` all resolved against the full
+  **852**. So `html, body { height: 100% }` chained off the ICB and came up
+  59px short — and since `body` is `overflow: hidden`, it then clipped
+  `#root` (already correctly 852 via `--app-height`) back to 793. The
+  result was an unfilled band at the bottom of the screen that looked
+  exactly like padding under the tab bar, and it is what sent three rounds
+  of fixes after the tab bar's padding, then after `pb-safe`, then after
+  the clamped `min(env(...), 6px)`. Don't reintroduce `height: 100%` on any
+  of the three.
+- **A viewport probe has to be visual, and has to escape the clip.** Two
+  measurement errors cost most of the rounds above, and both will recur:
+  - `getBoundingClientRect()` cannot locate anything on the *screen*. It
+    reports `top: 0` both for a box painted under the status bar and for
+    one painted below it, and a clipped element still reports its full
+    unclipped rect. Every box in the document measured 793 and agreed with
+    itself; what separated the two chains was painting them side by side —
+    `height: 100%` inside `body` and `100svh` landed at 793, while
+    `100dvh`/`100vh`/`100lvh` and a fixed `height: 100%` landed at 852.
+  - `html`, `body`, `#root` and `AppShell`'s root div are all
+    `overflow: hidden`. An 852px probe rendered inside any of them is
+    clipped to 793 and reads as a null result. Portal probes to
+    `document.body` and force `overflow: visible` while measuring.
+  Also: deriving a gap as `innerHeight - rect.bottom` is structurally blind
+  to a gap living *below* `innerHeight`. That returned 0 and was read as
+  "no dead band", which is what started the padding hunt.
 - **Safe-area utilities set padding outright, so never combine them with a
   `py-*`/`px-*` on the same element.** `pt-safe`/`pb-safe` are emitted
   after Tailwind's own padding utilities, so `py-3 pt-safe` loses the `py-3`
