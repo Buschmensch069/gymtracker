@@ -42,16 +42,24 @@
  * the element's own box; stacked on the bar's own padding that made the tab
  * bar ~95px tall with a 34px empty strip below the icons, which read as
  * "space reserved for Safari's toolbar". The indicator only needs a little
- * clearance so it doesn't sit on top of the labels, not the whole inset, so
- * this clamps it. Keeps the bar around 67px, and collapses to the bar's own
- * padding on devices with no indicator (inset 0).
+ * clearance so it doesn't sit on top of the labels, not the whole inset.
+ * Keeps the bar around 67px.
+ *
+ * Deliberately a flat value and NOT `min(env(safe-area-inset-bottom), 6px)`.
+ * The clamped form is the more elegant expression of the intent, but it makes
+ * the result depend on Safari evaluating env() correctly inside a math
+ * function, and the first attempt at this fix shipped that form and changed
+ * nothing on the device. A constant cannot fail that way, and the clamp was
+ * never buying anything: 6px is already below every real inset, so min() only
+ * ever returned 6px on the devices that matter and 6px is harmless on the ones
+ * with no indicator at all.
  *
  * Only for chrome that is genuinely flush with the bottom of the screen. An
  * element with something else below it (a page action bar above this tab bar,
  * say) needs no bottom inset at all.
  */
 @utility pb-home-indicator {
-  padding-bottom: min(env(safe-area-inset-bottom), 6px);
+  padding-bottom: 6px;
 }
 @utility pl-safe {
   padding-left: env(safe-area-inset-left);
