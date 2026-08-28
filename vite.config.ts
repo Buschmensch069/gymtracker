@@ -16,7 +16,10 @@ export default defineConfig({
         short_name: 'GymTracker',
         description: 'Offline-first personal workout tracker',
         theme_color: '#0b0f14',
-        background_color: '#0b0f14',
+        // TEMPORARY DIAGNOSTIC (revert with the body colour in index.css):
+        // if the bottom strip renders MAGENTA it is iOS painting its own window
+        // background outside our content, and no CSS can reach it.
+        background_color: '#ff00ff',
         display: 'standalone',
         orientation: 'portrait',
         start_url: '/',

@@ -108,34 +108,22 @@
  * standalone mode would let the document itself scroll/rubber-band (content
  * drifting down, header/tab bar moving) whenever inner content overflowed
  * even slightly, e.g. during the keyboard open/close resize.
- *
- * `var(--app-height)` here, NOT `height: 100%`. On iOS 26+ in a standalone
- * web app those are no longer the same number: the initial containing block
- * is inset by the status bar (docEl.clientHeight measured 793 on a 852pt
- * iPhone) while the layout viewport that `dvh`/`vh`/`lvh` and
- * `position: fixed` resolve against is the full 852. A percentage height
- * chains off the ICB and lands 59px short — and since body is
- * `overflow: hidden`, it then clipped `#root` (which was already correctly
- * 852 via `--app-height`) back to 793, leaving an unfilled band at the
- * bottom of the screen that looked exactly like padding under the tab bar.
- *
- * Three rounds of padding fixes chased that band because every box in the
- * document measured 793 and agreed with itself. What separated the two
- * chains was probing them side by side: `height: 100%` inside body and
- * `100svh` landed at 793, while `100dvh`/`100vh`/`100lvh` and a fixed
- * `height: 100%` landed at 852. So keep every box in this chain on a
- * viewport unit; don't reintroduce a percentage height on html or body.
  */
 html,
 body {
-  height: var(--app-height);
+  height: 100%;
   margin: 0;
   overflow: hidden;
   overscroll-behavior: none;
 }
 
 body {
-  background: var(--color-surface-0);
+  /* TEMPORARY DIAGNOSTIC (revert with background_color in vite.config.ts):
+     body's real colour is #0b0f14, identical to the manifest background_color,
+     so a dark strip cannot distinguish "iOS window background" from "our own
+     canvas". GREEN here makes that a three-way read: magenta = iOS, green =
+     ours (body propagating to the canvas), dark = neither. */
+  background: #00ff00;
   color: #e8eaed;
   font-family:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif;

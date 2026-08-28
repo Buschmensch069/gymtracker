@@ -310,10 +310,7 @@ old version silently breaks upgrades for anyone not starting from empty.
     through those transitions — so track `visualViewport.height`
     continuously there.
   - *Installed (standalone)* there is no browser chrome at all, so `100dvh`
-    is already exact — it resolves to the full screen height. This stays
-    true on iOS 26+, where it is the *percentage* chain that goes wrong and
-    not `dvh`; see the ICB note below before concluding `dvh` is at fault
-    for a dead band. Overriding it is actively harmful: any measurement
+    is already exact. Overriding it is actively harmful: any measurement
     taken mid-transition (launch animation, app switcher, rotation) is
     smaller than the screen and freezes into the layout as an inline pixel
     height, leaving a dead band at the bottom that reads as space reserved
@@ -324,36 +321,46 @@ old version silently breaks upgrades for anyone not starting from empty.
     `visualViewport.offsetTop` is pinned back to 0 (unless an input is
     focused) — iOS can leave the visual viewport scrolled down after a
     keyboard dismissal, which slides the header off the top of the screen.
-- **Never size the root height chain with a percentage — `html`, `body` and
-  `#root` all use `var(--app-height)`.** On iOS 26+ in a standalone web app
-  the initial containing block and the layout viewport are no longer the
-  same box. Measured on an 852pt iPhone: `documentElement.clientHeight` was
-  **793** (the screen minus the 59px status-bar inset), while `100dvh`,
-  `100vh`, `100lvh` and `position: fixed` all resolved against the full
-  **852**. So `html, body { height: 100% }` chained off the ICB and came up
-  59px short — and since `body` is `overflow: hidden`, it then clipped
-  `#root` (already correctly 852 via `--app-height`) back to 793. The
-  result was an unfilled band at the bottom of the screen that looked
-  exactly like padding under the tab bar, and it is what sent three rounds
-  of fixes after the tab bar's padding, then after `pb-safe`, then after
-  the clamped `min(env(...), 6px)`. Don't reintroduce `height: 100%` on any
-  of the three.
-- **A viewport probe has to be visual, and has to escape the clip.** Two
-  measurement errors cost most of the rounds above, and both will recur:
+- **UNRESOLVED: a ~59px band along the bottom of the screen in standalone.**
+  Five rounds have failed on it. Do not start a sixth by guessing; read this
+  first. Ruled out by measurement, not by argument: the tab bar's own padding
+  (measured 6px, height ~67, flush with `innerHeight`); `pb-safe` vs
+  `pb-home-indicator` and the clamped `min(env(...), 6px)`; and CSS background
+  propagation (with `html` painted opaque, the canvas took `html`'s colour, not
+  `body`'s — so it is not a paint anomaly). Still open: whether the band is
+  ours at all, or iOS painting its own window background outside our content,
+  in which case no CSS reaches it and the manifest `background_color` is the
+  only lever. The live test for that is a garish `background_color` plus a
+  contrasting `body` background — and note iOS caches the manifest at install
+  time, so the home-screen icon must be deleted and re-added or the test
+  silently returns the old colour.
+
+  A round-4 conclusion that the initial containing block is inset 59px from
+  the layout viewport (`documentElement.clientHeight` 793 against `100dvh`
+  852) is **retracted**: those numbers were taken while the probe itself
+  forced `overflow: visible` on `html`/`body`/`#root`, and `innerHeight` read
+  793 without it. The `html, body { height: var(--app-height) }` change that
+  followed fixed nothing on device and has been reverted to `height: 100%`.
+- **Any viewport probe must not perturb what it measures, and must be read
+  visually.** Four measurement errors, in the order they cost a round:
+  - Deriving the gap as `innerHeight - rect.bottom` is structurally blind to
+    a gap living *below* `innerHeight`. It returned 0, was read as "no dead
+    band", and started the padding hunt.
   - `getBoundingClientRect()` cannot locate anything on the *screen*. It
-    reports `top: 0` both for a box painted under the status bar and for
-    one painted below it, and a clipped element still reports its full
-    unclipped rect. Every box in the document measured 793 and agreed with
-    itself; what separated the two chains was painting them side by side —
-    `height: 100%` inside `body` and `100svh` landed at 793, while
-    `100dvh`/`100vh`/`100lvh` and a fixed `height: 100%` landed at 852.
+    reports `top: 0` both for a box painted under the status bar and for one
+    painted below it. Screen position needs a photograph and a fixed
+    `bottom: 0` hairline to measure against.
   - `html`, `body`, `#root` and `AppShell`'s root div are all
-    `overflow: hidden`. An 852px probe rendered inside any of them is
-    clipped to 793 and reads as a null result. Portal probes to
-    `document.body` and force `overflow: visible` while measuring.
-  Also: deriving a gap as `innerHeight - rect.bottom` is structurally blind
-  to a gap living *below* `innerHeight`. That returned 0 and was read as
-  "no dead band", which is what started the padding hunt.
+    `overflow: hidden`, so an over-tall probe rendered inside any of them is
+    clipped and *looks* like a null result. Portal visual probes to
+    `document.body`.
+  - **But do not fix that by forcing `overflow: visible` globally** — that is
+    what invalidated round 4. Changing overflow changes `innerHeight`. Only
+    the *visual* half ever needed unclipping: `getBoundingClientRect()`
+    already returns an element's full box regardless of any ancestor's
+    overflow, so numeric probes need no override at all. Keep the two halves
+    separate, and treat any number that moves when the probe is toggled as
+    the probe's, not the page's.
 - **Safe-area utilities set padding outright, so never combine them with a
   `py-*`/`px-*` on the same element.** `pt-safe`/`pb-safe` are emitted
   after Tailwind's own padding utilities, so `py-3 pt-safe` loses the `py-3`
