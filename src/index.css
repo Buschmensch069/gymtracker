@@ -313,3 +313,23 @@ button {
     opacity: 0.35;
   }
 }
+
+/*
+ * A long-press drag handle that is also ordinary text (the exercise heading in
+ * an active workout). Without this, pressing and holding the name runs iOS's
+ * own text gestures instead of dnd-kit's: the word gets selected and the
+ * copy/lookup callout pops up, and the drag never starts.
+ *
+ * `touch-action: manipulation` rather than `none` on purpose. `none` would
+ * make the heading a dead strip you cannot start a scroll from, and it is not
+ * needed here: the drag only activates after the finger has been still for
+ * ACTIVATION_DELAY_MS, so no scroll has begun by then, and dnd-kit's touch
+ * sensor preventDefault()s the moves that follow. Move early and you get a
+ * scroll, which is the right answer for a finger that is travelling.
+ */
+@utility drag-handle {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
+}

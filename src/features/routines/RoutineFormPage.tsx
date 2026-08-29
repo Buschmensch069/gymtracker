@@ -18,10 +18,14 @@ import { useExerciseById } from '../exercises/useExercises'
 import { defaultRestSecondsFor } from '../../lib/restTimer'
 import type { Exercise, Routine, RoutineExercise } from '../../db/types'
 import { RoutineExerciseRow } from './RoutineExerciseRow'
-import { createRoutine, deleteRoutine, updateRoutine, useRoutine } from './useRoutines'
-
-const DEFAULT_TARGET_SETS = 3
-const DEFAULT_REP_RANGE = '8-12'
+import {
+  DEFAULT_REP_RANGE,
+  DEFAULT_TARGET_SETS,
+  createRoutine,
+  deleteRoutine,
+  updateRoutine,
+  useRoutine,
+} from './useRoutines'
 
 export function RoutineFormPage() {
   const { id } = useParams<{ id: string }>()

@@ -16,8 +16,10 @@ Home Screen". All persistence is local, in IndexedDB via Dexie.
   tonnage, consistency).
 - **lucide-react** — the only icon set. Don't hand-roll inline SVG icons.
 - **@dnd-kit/core + @dnd-kit/sortable** — drag-to-reorder for routine
-  exercises (`RoutineExerciseRow.tsx`). Not used anywhere else; reach for it
-  again before adding a second drag-and-drop dependency.
+  exercises (`RoutineExerciseRow.tsx`), for the active workout's exercise
+  list (`ActiveExerciseBlock.tsx`, long-press) and inside
+  `ReorderExercisesSheet`. Reach for it again before adding a second
+  drag-and-drop dependency.
 - **React Router** — client-side routing, bottom-tab app shell.
 - Deploy target: **Vercel**.
 
@@ -313,6 +315,35 @@ old version silently breaks upgrades for anyone not starting from empty.
   engaged drag — or a tap that closes an already-open row — is swallowed in
   the capture phase. Always leave a non-gesture path to the same action;
   "Remove Set" lives in the set-type sheet for exactly that reason.
+- **Reordering exercises mid-workout is a long-press drag on the heading,
+  never on a set row.** The set rows own the horizontal swipe
+  (`SwipeToDelete`) and are wall-to-wall inputs, so the vertical drag lives on
+  the exercise *name* only (`ActiveExerciseBlock.tsx`) and the whole block —
+  heading, sets, "+ Add Set" — is the sortable unit that travels. Three things
+  make the gesture behave on iOS and all three are load-bearing:
+  - **`TouchSensor` with a `delay` activation constraint** (250ms /
+    8px tolerance), not `PointerSensor`. The delay is what separates "drag
+    this exercise" from "scroll the list"; moving before it elapses cancels
+    the pending drag and you get a scroll, which is the right answer for a
+    finger that is travelling.
+  - **The `drag-handle` utility** (`src/index.css`): `user-select: none` plus
+    `-webkit-touch-callout: none`. Without them a long press on the name runs
+    iOS's own text gestures instead — the word gets selected and the
+    copy/lookup callout appears, and the drag never starts. This is exactly
+    what "long-press to drag doesn't work, it just selects the text" looks
+    like.
+  - **`touch-action: manipulation`, not `none`.** `none` on a heading inside
+    a scrolling list makes it a dead strip you cannot start a scroll from,
+    and it isn't needed: after the delay the finger has been still, so no
+    scroll has begun and dnd-kit's non-passive `preventDefault` on the
+    following moves is honoured.
+
+  The drop writes through `reorderWorkoutExercises` immediately, with the
+  dropped order held in local state (`pendingOrder`) only until the live query
+  comes back with it — otherwise the list visibly snaps back for the frame
+  between the drop and the write landing. "Reorder Exercises" in the per-
+  exercise menu stays as the non-gesture path to the same action, per the
+  `SwipeToDelete` rule above.
 - **A completed set is green, not accent.** The whole row takes an
   `emerald-500/15` wash and the checkmark goes solid emerald. Cyan is the
   accent used for *interactive* state app-wide, and reusing it for
@@ -572,6 +603,42 @@ device the API exists and the request rejects.
 
 If you're tempted to add a "notify me when resting" toggle: re-read this
 section first. It will silently no-op exactly when it matters.
+
+## Updating a Routine From a Session
+
+Routines here are a record of what I actually do, not a plan to obey — so
+finishing a workout that drifted from its routine offers to move the routine,
+not to correct the workout. `planRoutineUpdate`
+(`features/workout/routineUpdate.ts`) is the whole decision; `Finish` shows
+`UpdateRoutineSheet` only when it returns a plan, and finishes immediately
+otherwise, so a session that matched costs no extra tap.
+
+- **Scope is exercises, their order, and target sets. Nothing else.**
+  `targetRepRange` and `restTimerSeconds` are carried over verbatim from the
+  routine's existing entry for that exercise — they're deliberate settings,
+  and a session doesn't even record a rep *range*. Weights were never in the
+  routine at all. Don't widen this.
+- **"Sets I did" is `performedSetCount`**: non-warmup rows that are
+  `completed` or `touched`. Warmups are out for the same reason
+  `computeTonnage` excludes them — a routine's target means working sets, and
+  `startWorkoutFromRoutine` only pre-populates `normal` rows. Untouched,
+  uncompleted rows are out because those are the pre-populated sets that were
+  planned and never done; counting them would make "I stopped two sets early"
+  look identical to "I did the plan".
+- **Never propose emptying a routine.** A session with no performed sets at
+  all returns `null` (no prompt) rather than a plan that deletes every
+  exercise — a workout abandoned before anything was logged says nothing
+  about what the routine should be.
+- **An exercise logged twice in one session merges** into one routine entry at
+  its first position with the counts summed. Routine exercises are keyed by
+  `exerciseId` (the routine editor uses it as the drag id and won't add a
+  duplicate), so two entries for one exercise would collide.
+- **Order changes are diffed over the exercises the two lists share**,
+  otherwise every add or removal would also report "order changed" — true,
+  but nothing the added/removed lines didn't already say.
+- Dismissing the sheet (Cancel or the scrim) returns to the workout **without
+  finishing it**. Declining is "Finish Without Updating"; dismissing is a
+  mis-tap on Finish, and it must not cost the session.
 
 ## Folder Structure
 

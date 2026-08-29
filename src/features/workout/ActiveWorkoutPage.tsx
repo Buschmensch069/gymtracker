@@ -1,6 +1,16 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
-import { EllipsisVertical, NotebookPen } from 'lucide-react'
+import { NotebookPen } from 'lucide-react'
+import {
+  DndContext,
+  MouseSensor,
+  TouchSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import { SortableContext, arrayMove, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { PageHeader } from '../../components/layout/PageHeader'
 import { Button } from '../../components/ui/Button'
 import { EmptyState } from '../../components/ui/EmptyState'
@@ -8,18 +18,20 @@ import { Sheet } from '../../components/ui/Sheet'
 import { Textarea } from '../../components/ui/Textarea'
 import { useUnitPreference } from '../../hooks/useSettings'
 import { formatDuration } from '../../lib/dates'
-import { setDisplayInfo } from '../../lib/setTypes'
 import { db } from '../../db/schema'
 import type { SetLog } from '../../db/types'
 import { ExercisePickerSheet } from '../exercises/ExercisePickerSheet'
+import { useExerciseById } from '../exercises/useExercises'
+import { updateRoutine } from '../routines/useRoutines'
+import { ActiveExerciseBlock } from './ActiveExerciseBlock'
 import { ExerciseMenuSheet } from './ExerciseMenuSheet'
 import { ReorderExercisesSheet } from './ReorderExercisesSheet'
 import { RestTimerBar } from './RestTimerBar'
-import { SetLogRow } from './SetLogRow'
+import { UpdateRoutineSheet } from './UpdateRoutineSheet'
+import { planRoutineUpdate, type RoutineUpdatePlan } from './routineUpdate'
 import { useRestSecondsByExercise } from './useRestTimer'
 import {
   addExerciseToWorkout,
-  addSet,
   discardWorkout,
   finishWorkout,
   removeExerciseFromWorkout,
@@ -30,10 +42,20 @@ import {
   type WorkoutExerciseWithDetails,
 } from './useActiveWorkout'
 
+/**
+ * How long the finger has to sit still on an exercise heading before it
+ * becomes a drag. Long enough that a scroll flick started on the heading is
+ * still a scroll, short enough not to feel stuck; `tolerance` cancels the
+ * pending drag if the finger travels first, so an early move always scrolls.
+ */
+const ACTIVATION_DELAY_MS = 250
+const ACTIVATION_TOLERANCE_PX = 8
+
 export function ActiveWorkoutPage() {
   const activeWorkout = useActiveWorkout()
   const [unit] = useUnitPreference()
   const workoutExercises = useWorkoutExercises(activeWorkout?.id)
+  const exerciseById = useExerciseById()
   const restSecondsByExercise = useRestSecondsByExercise(
     activeWorkout?.routineId,
     (workoutExercises ?? []).map((we) => we.exercise),
@@ -41,10 +63,43 @@ export function ActiveWorkoutPage() {
   const [showAddExercise, setShowAddExercise] = useState(false)
   const [showNotes, setShowNotes] = useState(false)
   const [showReorder, setShowReorder] = useState(false)
-  /** workoutExerciseId whose ⋮ menu is open. */
+  /** workoutExerciseId whose menu is open. */
   const [menuFor, setMenuFor] = useState<string | null>(null)
   /** workoutExerciseId being swapped for a different exercise. */
   const [replaceFor, setReplaceFor] = useState<string | null>(null)
+  /** The routine rewrite offered on Finish; null means no prompt is open. */
+  const [routineUpdatePlan, setRoutineUpdatePlan] = useState<RoutineUpdatePlan | null>(null)
+  /**
+   * The order a just-dropped drag put the exercises in, held only until the
+   * live query comes back with it. Without this the list snaps back to the old
+   * order for the frame between the drop and the write landing.
+   */
+  const [pendingOrder, setPendingOrder] = useState<string[] | null>(null)
+
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: ACTIVATION_DELAY_MS, tolerance: ACTIVATION_TOLERANCE_PX },
+    }),
+  )
+
+  const orderedExercises = useMemo(() => {
+    if (!workoutExercises || !pendingOrder) return workoutExercises
+    const byId = new Map(workoutExercises.map((we) => [we.id, we]))
+    const ordered = pendingOrder.map((id) => byId.get(id)).filter((we) => we !== undefined)
+    // A stale pending order (an exercise was added or removed since the drop)
+    // is dropped rather than partially applied.
+    return ordered.length === workoutExercises.length ? ordered : workoutExercises
+  }, [workoutExercises, pendingOrder])
+
+  useEffect(() => {
+    if (!pendingOrder || !workoutExercises) return
+    if (orderedExercises === workoutExercises) {
+      setPendingOrder(null)
+      return
+    }
+    if (workoutExercises.every((we, index) => we.id === pendingOrder[index])) setPendingOrder(null)
+  }, [orderedExercises, pendingOrder, workoutExercises])
 
   if (activeWorkout === undefined) return null
 
@@ -82,7 +137,42 @@ export function ActiveWorkoutPage() {
     setReplaceFor(we.id)
   }
 
-  const menuExercise = workoutExercises?.find((we) => we.id === menuFor)
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id || !orderedExercises) return
+    const ids = orderedExercises.map((we) => we.id)
+    const next = arrayMove(ids, ids.indexOf(String(active.id)), ids.indexOf(String(over.id)))
+    setPendingOrder(next)
+    reorderWorkoutExercises(activeWorkout.id, next)
+  }
+
+  /**
+   * Finishing goes through the routine diff first: a workout started from a
+   * routine that ended up different is the moment to offer to update it (see
+   * planRoutineUpdate for what counts as different). Everything else — a
+   * freeform workout, a deleted routine, a session that matched the plan —
+   * finishes straight away, with no extra tap.
+   */
+  const handleFinish = async () => {
+    if (activeWorkout.routineId && workoutExercises && exerciseById) {
+      const routine = await db.routines.get(activeWorkout.routineId)
+      const plan = planRoutineUpdate(routine, workoutExercises, exerciseById)
+      if (plan) {
+        setRoutineUpdatePlan(plan)
+        return
+      }
+    }
+    await finishWorkout(activeWorkout.id)
+  }
+
+  const handleUpdateRoutineAndFinish = async (plan: RoutineUpdatePlan) => {
+    // Exercises, their order and their target sets only — the plan already
+    // carried rep ranges and rest timers over from the existing routine.
+    await updateRoutine(plan.routineId, { exercises: plan.exercises })
+    await finishWorkout(activeWorkout.id)
+  }
+
+  const menuExercise = orderedExercises?.find((we) => we.id === menuFor)
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -109,49 +199,28 @@ export function ActiveWorkoutPage() {
       />
 
       <div className="flex-1 scroll-touch pb-4">
-        {workoutExercises?.length === 0 && (
+        {orderedExercises?.length === 0 && (
           <EmptyState title="No exercises yet" message="Tap Add Exercise to get started." />
         )}
 
-        {workoutExercises?.map((we) => {
-          // Displayed numbering counts working sets only, so a warmup reads
-          // "W" and everything below it renumbers — see setDisplayInfo.
-          const displays = setDisplayInfo(we.sets)
-          return (
-            <div key={we.id} className="mt-3 first:mt-0">
-              <div className="flex items-center justify-between gap-2 px-4 py-1">
-                <p className="min-w-0 flex-1 truncate font-semibold text-slate-100">
-                  {we.exercise?.name ?? 'Exercise'}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setMenuFor(we.id)}
-                  aria-label={`${we.exercise?.name ?? 'Exercise'} options`}
-                  className="-mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-slate-400 active:bg-surface-1"
-                >
-                  <EllipsisVertical size={20} />
-                </button>
-              </div>
-              {we.sets.map((set, index) => (
-                <SetLogRow
-                  key={set.id}
-                  set={set}
+        {orderedExercises && (
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext
+              items={orderedExercises.map((we) => we.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              {orderedExercises.map((we) => (
+                <ActiveExerciseBlock
+                  key={we.id}
+                  workoutExercise={we}
                   unit={unit}
-                  display={displays[index]}
                   restSeconds={restSecondsByExercise.get(we.exerciseId) ?? 0}
-                  exerciseName={we.exercise?.name}
+                  onOpenMenu={() => setMenuFor(we.id)}
                 />
               ))}
-              <button
-                type="button"
-                onClick={() => addSet(we.id)}
-                className="mx-4 mt-1 min-h-11 rounded-xl border border-dashed border-border px-4 text-sm text-slate-400 active:bg-surface-1"
-              >
-                + Add Set
-              </button>
-            </div>
-          )
-        })}
+            </SortableContext>
+          </DndContext>
+        )}
       </div>
 
       <RestTimerBar />
@@ -164,7 +233,7 @@ export function ActiveWorkoutPage() {
         <Button variant="secondary" fullWidth onClick={() => setShowAddExercise(true)}>
           Add Exercise
         </Button>
-        <Button fullWidth onClick={() => finishWorkout(activeWorkout.id)}>
+        <Button fullWidth onClick={handleFinish}>
           Finish
         </Button>
       </div>
@@ -179,9 +248,9 @@ export function ActiveWorkoutPage() {
         />
       )}
 
-      {showReorder && workoutExercises && (
+      {showReorder && orderedExercises && (
         <ReorderExercisesSheet
-          exercises={workoutExercises}
+          exercises={orderedExercises}
           onReorder={(ids) => reorderWorkoutExercises(activeWorkout.id, ids)}
           onClose={() => setShowReorder(false)}
         />
@@ -205,6 +274,15 @@ export function ActiveWorkoutPage() {
             setShowAddExercise(false)
           }}
           onClose={() => setShowAddExercise(false)}
+        />
+      )}
+
+      {routineUpdatePlan && (
+        <UpdateRoutineSheet
+          plan={routineUpdatePlan}
+          onUpdate={() => handleUpdateRoutineAndFinish(routineUpdatePlan)}
+          onSkip={() => finishWorkout(activeWorkout.id)}
+          onClose={() => setRoutineUpdatePlan(null)}
         />
       )}
 
