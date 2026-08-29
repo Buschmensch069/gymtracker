@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { isStandaloneDisplay } from '../lib/standalone'
-import { KEYBOARD_MIN_SHRINK_PX, appHeight } from '../lib/viewport'
+import { KEYBOARD_MIN_SHRINK_PX, appHeight, pinDocumentScroll } from '../lib/viewport'
 
 /**
  * Root layout height, or `undefined` to let CSS `var(--app-height)` (see
@@ -66,7 +66,7 @@ function measure(): number | undefined {
   const viewport = window.visualViewport
   if (!viewport) return undefined
 
-  resetViewportOffset(viewport)
+  resetViewportOffset()
 
   // In a browser tab `innerHeight` IS the layout viewport, and this path is
   // known-good — leave it alone.
@@ -84,14 +84,18 @@ function measure(): number | undefined {
 }
 
 /**
- * Pin the visual viewport back to the top of the layout viewport. iOS scrolls
- * it down to reveal a focused field and doesn't always scroll back, which
- * shifts the whole app down behind the status bar. Skipped while an input is
- * focused so we don't fight iOS mid-focus.
+ * Pin the document back to the top of the layout viewport.
+ *
+ * iOS scrolls it down to reveal a focused field and doesn't always scroll
+ * back, which shifts the whole app down behind the status bar. This used to
+ * skip while an input was focused, on the theory that fighting iOS mid-focus
+ * would be worse — it isn't. That exemption is exactly the window in which the
+ * displacement happens, and leaving it in place is what let the entire shell,
+ * tab bar included, ride up the screen when a field low in a long list was
+ * tapped. `useKeyboardScrollIntoView` handles the same job during focus and
+ * this is the standing guarantee alongside it; the shared helper is what keeps
+ * the two from disagreeing about what "displaced" means.
  */
-function resetViewportOffset(viewport: VisualViewport): void {
-  if (viewport.offsetTop <= 0 && window.scrollY <= 0) return
-  const active = document.activeElement
-  if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return
-  window.scrollTo(0, 0)
+function resetViewportOffset(): void {
+  pinDocumentScroll()
 }

@@ -57,3 +57,49 @@ export function visibleBottom(): number {
   if (!viewport) return window.innerHeight
   return viewport.offsetTop + viewport.height
 }
+
+/**
+ * Force the *document* back to scroll offset 0.
+ *
+ * Nothing at document level is ever supposed to scroll in this app — html and
+ * body are `overflow: hidden` and only the one `.scroll-touch` region inside a
+ * page moves (see CLAUDE.md). iOS does not honour that when it wants to reveal
+ * a focused field: `overflow: hidden` stops the *user* scrolling the viewport,
+ * it does not stop the UA scrolling it, and in standalone there is genuinely
+ * something to scroll — the app is sized to the large viewport (852) while the
+ * initial containing block is the small one (793), so the document has ~59px
+ * of scrollable overflow by construction. iOS also pans the visual viewport
+ * inside the layout viewport (`visualViewport.offsetTop`), which moves the app
+ * on screen without changing any scroll offset at all.
+ *
+ * Both look identical from the user's seat and both are wrong here: the header
+ * and the bottom tab bar slide up off the top of the screen along with
+ * everything else, because the *shell* moved rather than the list inside it.
+ * `window.scrollTo(0, 0)` is what pulls the visual viewport back as well as
+ * the layout one; the explicit `scrollTop`/`scrollLeft` writes cover the
+ * engines where the scrolling box is html or body rather than the viewport.
+ *
+ * Returns whether anything was actually out of place, so callers can log or
+ * short-circuit; writing unconditionally would be a layout thrash every frame.
+ */
+export function pinDocumentScroll(): boolean {
+  const viewport = window.visualViewport
+  const root = document.documentElement
+  const displaced =
+    window.scrollX !== 0 ||
+    window.scrollY !== 0 ||
+    root.scrollTop !== 0 ||
+    root.scrollLeft !== 0 ||
+    document.body.scrollTop !== 0 ||
+    document.body.scrollLeft !== 0 ||
+    (viewport ? viewport.offsetTop > 0 || viewport.offsetLeft > 0 : false)
+
+  if (!displaced) return false
+
+  window.scrollTo(0, 0)
+  root.scrollTop = 0
+  root.scrollLeft = 0
+  document.body.scrollTop = 0
+  document.body.scrollLeft = 0
+  return true
+}
