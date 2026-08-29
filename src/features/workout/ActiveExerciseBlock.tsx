@@ -1,7 +1,8 @@
 import { EllipsisVertical } from 'lucide-react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import type { UnitPreference } from '../../db/types'
+import { MUSCLE_LABELS, type UnitPreference } from '../../db/types'
+import { MUSCLE_COLORS } from '../../lib/muscleColors'
 import { setDisplayInfo } from '../../lib/setTypes'
 import { SetLogRow } from './SetLogRow'
 import { addSet, type WorkoutExerciseWithDetails } from './useActiveWorkout'
@@ -26,6 +27,19 @@ interface ActiveExerciseBlockProps {
  * text-selection/callout suppression a long press otherwise triggers — see
  * index.css — and the ⋮ button stays outside the handle so it is still a
  * plain tap.
+ *
+ * Each block reads as its own card, keyed to the exercise's primary muscle
+ * (MUSCLE_COLORS, the same hues as the routine dots and the weekly-sets
+ * chart): a full-height spine down the left edge, the name in that colour,
+ * and the muscle spelled out beside it so identity never rests on colour
+ * alone — the Chip rule, applied here.
+ *
+ * The colour is deliberately carried by an absolutely-positioned spine and a
+ * heading band, never by a border or horizontal inset on the block. The set
+ * row is within ~18px of filling a 390pt screen (36 + 144 + 120 + 44 of
+ * controls plus its own padding), so anything that costs layout width here
+ * comes straight out of the weight and reps fields and wraps the row on a
+ * smaller phone.
  */
 export function ActiveExerciseBlock({
   workoutExercise,
@@ -40,6 +54,7 @@ export function ActiveExerciseBlock({
   // everything below it renumbers — see setDisplayInfo.
   const displays = setDisplayInfo(workoutExercise.sets)
   const name = workoutExercise.exercise?.name ?? 'Exercise'
+  const muscle = workoutExercise.exercise?.primaryMuscle
 
   return (
     <div
@@ -51,11 +66,11 @@ export function ActiveExerciseBlock({
         position: 'relative',
         zIndex: isDragging ? 20 : undefined,
       }}
-      className={`mt-3 first:mt-0 ${
+      className={`mt-5 first:mt-0 pb-1 ${
         isDragging ? 'rounded-xl bg-surface-1 opacity-95 shadow-lg ring-1 ring-accent/50' : ''
       }`}
     >
-      <div className="flex items-center justify-between gap-2 px-4 py-1">
+      <div className="mb-1 flex items-center gap-2 border-y border-border bg-surface-1 py-1 pl-4 pr-2">
         <p
           ref={setActivatorNodeRef}
           {...attributes}
@@ -66,15 +81,24 @@ export function ActiveExerciseBlock({
           // aria-roledescription are still worth keeping for VoiceOver.
           tabIndex={-1}
           aria-label={`${name} — press and hold to reorder`}
-          className="drag-handle min-w-0 flex-1 truncate py-1 font-semibold text-slate-100"
+          className="drag-handle min-w-0 flex-1 truncate py-1 font-semibold"
+          style={{ color: muscle ? MUSCLE_COLORS[muscle] : undefined }}
         >
           {name}
         </p>
+        {/* Alongside the name rather than under it: the label is what keeps
+            the block's identity off colour alone (the Chip rule), and on a
+            phone it should not cost the block a whole extra line. */}
+        {muscle && (
+          <span className="shrink-0 text-[11px] font-medium uppercase tracking-wide text-slate-500">
+            {MUSCLE_LABELS[muscle]}
+          </span>
+        )}
         <button
           type="button"
           onClick={onOpenMenu}
           aria-label={`${name} options`}
-          className="-mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-slate-400 active:bg-surface-1"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-slate-400 active:bg-surface-2"
         >
           <EllipsisVertical size={20} />
         </button>
@@ -94,10 +118,21 @@ export function ActiveExerciseBlock({
       <button
         type="button"
         onClick={() => addSet(workoutExercise.id)}
-        className="mx-4 mt-1 min-h-11 rounded-xl border border-dashed border-border px-4 text-sm text-slate-400 active:bg-surface-1"
+        className="mx-4 mt-1 min-h-11 rounded-xl border border-dashed border-border px-4 text-sm text-slate-400 active:bg-surface-2"
       >
         + Add Set
       </button>
+
+      {/* Last in the DOM, not first: absolutely positioned either way, but the
+          heading band is opaque and would otherwise paint over the top of it.
+          Absolute so the spine costs the set rows no width — see above. */}
+      {muscle && (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 left-0 w-1 rounded-r-full"
+          style={{ backgroundColor: MUSCLE_COLORS[muscle] }}
+        />
+      )}
     </div>
   )
 }

@@ -28,7 +28,7 @@ import { ExerciseMenuSheet } from './ExerciseMenuSheet'
 import { ReorderExercisesSheet } from './ReorderExercisesSheet'
 import { RestTimerBar } from './RestTimerBar'
 import { UpdateRoutineSheet } from './UpdateRoutineSheet'
-import { planRoutineUpdate, type RoutineUpdatePlan } from './routineUpdate'
+import { performedSetCount, planRoutineUpdate, type RoutineUpdatePlan } from './routineUpdate'
 import { useRestSecondsByExercise } from './useRestTimer'
 import {
   addExerciseToWorkout,
@@ -154,13 +154,33 @@ export function ActiveWorkoutPage() {
    * finishes straight away, with no extra tap.
    */
   const handleFinish = async () => {
-    if (activeWorkout.routineId && workoutExercises && exerciseById) {
-      const routine = await db.routines.get(activeWorkout.routineId)
-      const plan = planRoutineUpdate(routine, workoutExercises, exerciseById)
-      if (plan) {
-        setRoutineUpdatePlan(plan)
-        return
-      }
+    const routine = activeWorkout.routineId
+      ? await db.routines.get(activeWorkout.routineId)
+      : undefined
+    const plan =
+      workoutExercises && exerciseById
+        ? planRoutineUpdate(routine, workoutExercises, exerciseById)
+        : null
+
+    // TEMPORARY — remove once the missing prompt is confirmed fixed on device.
+    // Outside the guards on purpose: a null plan and a workout that never had
+    // a routineId look identical from the outside, and telling them apart is
+    // the whole question. Needs Safari Web Inspector over USB to read in
+    // standalone.
+    console.log('[gymtracker] finish', {
+      routineId: activeWorkout.routineId,
+      routine: routine?.name,
+      loaded: { workoutExercises: workoutExercises?.length, exercises: exerciseById?.size },
+      performed: (workoutExercises ?? []).map((we) => [
+        we.exercise?.name,
+        performedSetCount(we.sets),
+      ]),
+      plan,
+    })
+
+    if (plan) {
+      setRoutineUpdatePlan(plan)
+      return
     }
     await finishWorkout(activeWorkout.id)
   }
@@ -198,7 +218,9 @@ export function ActiveWorkoutPage() {
         }
       />
 
-      <div className="flex-1 scroll-touch pb-4">
+      {/* pt-2 so the first exercise card's top hairline doesn't land flush
+          against PageHeader's border-b and read as a double rule. */}
+      <div className="flex-1 scroll-touch pb-4 pt-2">
         {orderedExercises?.length === 0 && (
           <EmptyState title="No exercises yet" message="Tap Add Exercise to get started." />
         )}

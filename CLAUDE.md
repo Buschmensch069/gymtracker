@@ -120,10 +120,20 @@ placeholder-eligible).
 **Routines** (`Routine`/`RoutineExercise`) are fully built out: create,
 edit, delete, reorder exercises via drag (`features/routines/`). "Start
 Routine" calls `startWorkoutFromRoutine(routineId)`
-(`useActiveWorkout.ts`), which sets `Workout.routineId`, adds each routine
-exercise in order, then calls the existing `addSet` `targetSets` times per
-exercise to pre-populate empty (untouched) set rows — no separate
-set-creation path for routine-started workouts.
+(`useActiveWorkout.ts`), which sets `Workout.routineId` and adds each routine
+exercise in order — no separate set-creation path for routine-started
+workouts.
+
+**An exercise never arrives without a set row.** `addExerciseToWorkout` takes
+an `initialSets` count (default **1**) and calls `addSet` that many times;
+`startWorkoutFromRoutine` passes the routine's `targetSets` instead of taking
+the default. A bare heading was two bugs at once: the first thing you did
+after picking an exercise mid-session was tap "+ Add Set", and until you did,
+the exercise had *no sets at all* — which made it invisible to the Finish
+diff (`performedSetCount` counts performed rows, and an exercise with none is
+not evidence of anything), so adding an exercise mid-workout silently failed
+to offer the routine update. Keep the two counts in one place: don't
+reintroduce a pre-populate loop at the call site.
 
 **Units:** `weightKg` is the canonical stored unit, always. The kg/lb toggle
 in Settings (`settings` table, key `unitPreference`) only affects display
@@ -315,6 +325,26 @@ old version silently breaks upgrades for anyone not starting from empty.
   engaged drag — or a tap that closes an already-open row — is swallowed in
   the capture phase. Always leave a non-gesture path to the same action;
   "Remove Set" lives in the set-type sheet for exactly that reason.
+- **Each exercise in the active workout is a card keyed to its primary
+  muscle.** `ActiveExerciseBlock` gets a `MUSCLE_COLORS` spine down its left
+  edge, the exercise name in that colour, the muscle spelled out beside it
+  (the `Chip` rule — identity never rests on colour alone), and a
+  `bg-surface-1` heading band between two hairlines. Blocks used to run
+  together into one undifferentiated column while scrolling.
+
+  **The colour must not cost layout width.** The spine is
+  `absolute inset-y-0 left-0`, not a `border-l`, and the block has no
+  horizontal margin. A set row is already within ~18px of filling a 390pt
+  screen (36 + 144 + 120 + 44 of controls plus its own padding), so a border
+  or an `mx-*` here comes straight out of the weight and reps fields and
+  wraps the row on a smaller phone. The spine is also rendered **last** in
+  the block, because the heading band is opaque and would otherwise paint
+  over the top of it.
+
+  Note the interior stays `surface-0`: `WeightRepsInput`'s field is
+  `bg-surface-1` and the steppers/checkmark are `surface-2`, so filling the
+  card with `surface-1` would swallow the inputs. The card reads from its
+  band, its spine and its spacing, not from a fill.
 - **Reordering exercises mid-workout is a long-press drag on the heading,
   never on a set row.** The set rows own the horizontal swipe
   (`SwipeToDelete`) and are wall-to-wall inputs, so the vertical drag lives on

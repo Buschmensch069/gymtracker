@@ -47,11 +47,10 @@ export async function startWorkout(routineId?: string, routineName?: string): Pr
  * Starts a workout from a routine: creates the Workout with routineId set
  * (plus a routineName snapshot — see Workout.routineName in db/types.ts, so
  * deleting this routine later can't make this workout revert to
- * "Freeform" in History), adds each routine exercise in order, then
- * pre-populates each with targetSets empty rows (via the same addSet used
- * by "+ Add Set" — see its touched-inheritance comment for why this loop
- * naturally leaves every pre-populated set untouched/placeholder-eligible
- * with no special-casing).
+ * "Freeform" in History), then adds each routine exercise in order with its
+ * targetSets empty rows already in place — the same pre-populating
+ * addExerciseToWorkout does for a hand-added exercise, just asking for the
+ * routine's count instead of one.
  */
 export async function startWorkoutFromRoutine(routineId: string): Promise<string> {
   const routine = await db.routines.get(routineId)
@@ -59,10 +58,7 @@ export async function startWorkoutFromRoutine(routineId: string): Promise<string
 
   const workoutId = await startWorkout(routineId, routine.name)
   for (const routineExercise of routine.exercises) {
-    const workoutExerciseId = await addExerciseToWorkout(workoutId, routineExercise.exerciseId)
-    for (let i = 0; i < routineExercise.targetSets; i++) {
-      await addSet(workoutExerciseId)
-    }
+    await addExerciseToWorkout(workoutId, routineExercise.exerciseId, routineExercise.targetSets)
   }
   return workoutId
 }
@@ -86,7 +82,25 @@ export async function discardWorkout(workoutId: string): Promise<void> {
   await stopRestTimer()
 }
 
-export async function addExerciseToWorkout(workoutId: string, exerciseId: string): Promise<string> {
+/**
+ * Adds an exercise to the workout with `initialSets` empty rows already on it.
+ *
+ * The default of 1 is the point: an exercise added mid-session used to arrive
+ * as a bare heading, so the first thing you did after picking it was tap
+ * "+ Add Set" — and until you did, the exercise had no sets, which also made
+ * it invisible to the routine diff on Finish (see performedSetCount: an
+ * exercise with nothing performed is not evidence of anything). Sets are
+ * created through the same `addSet` as "+ Add Set", so they inherit the
+ * untouched/placeholder behaviour described there with no special-casing.
+ *
+ * `startWorkoutFromRoutine` passes the routine's targetSets instead of taking
+ * the default.
+ */
+export async function addExerciseToWorkout(
+  workoutId: string,
+  exerciseId: string,
+  initialSets = 1,
+): Promise<string> {
   const existingCount = await db.workoutExercises.where('workoutId').equals(workoutId).count()
   const id = newId()
   await db.workoutExercises.add({
@@ -95,6 +109,9 @@ export async function addExerciseToWorkout(workoutId: string, exerciseId: string
     exerciseId,
     order: existingCount,
   })
+  for (let i = 0; i < initialSets; i++) {
+    await addSet(id)
+  }
   return id
 }
 
