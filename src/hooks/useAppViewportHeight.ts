@@ -1,13 +1,6 @@
 import { useEffect, useState } from 'react'
 import { isStandaloneDisplay } from '../lib/standalone'
-
-/**
- * The on-screen keyboard is the only thing that shrinks the visual viewport by
- * a meaningful amount; anything smaller than this is Safari's own chrome
- * animating, a rubber-band, or a rounding difference, and must not be baked
- * into the layout height.
- */
-const KEYBOARD_MIN_SHRINK_PX = 120
+import { KEYBOARD_MIN_SHRINK_PX, appHeight } from '../lib/viewport'
 
 /**
  * Root layout height, or `undefined` to let CSS `var(--app-height)` (see
@@ -35,9 +28,14 @@ const KEYBOARD_MIN_SHRINK_PX = 120
  * in standalone. On iOS 26+ `innerHeight` is the *small* viewport (793 on an
  * 852pt iPhone) while the app is sized to the *large* one (852), so an
  * innerHeight clamp there would pin the layout straight back to 793 and
- * quietly undo the `--app-height` fix. `appHeight()` below reads the app's
- * real CSS height instead. In a browser tab `innerHeight` genuinely is the
- * layout viewport, so that path keeps using it unchanged.
+ * quietly undo the `--app-height` fix. `appHeight()` (src/lib/viewport.ts)
+ * reads the app's real CSS height instead. In a browser tab `innerHeight`
+ * genuinely is the layout viewport, so that path keeps using it unchanged.
+ *
+ * Shrinking the shell to `visualViewport.height` is also what makes the
+ * focused-field scroll (`useKeyboardScrollIntoView`) correct: once the shell
+ * ends at the top of the keyboard, "scroll it into the scroll container" and
+ * "scroll it above the keyboard" are the same operation.
  */
 export function useAppViewportHeight(): number | undefined {
   const [height, setHeight] = useState<number | undefined>(() => measure())
@@ -83,23 +81,6 @@ function measure(): number | undefined {
   const appViewport = appHeight()
   const keyboardOpen = appViewport - viewport.height >= KEYBOARD_MIN_SHRINK_PX
   return keyboardOpen ? Math.min(viewport.height, appViewport) : undefined
-}
-
-/**
- * The app's full height as CSS currently computes it — `var(--app-height)`,
- * which is `100lvh` in standalone and `100dvh` in a browser tab. Probed rather
- * than re-derived so it cannot drift out of sync with index.css, and read off
- * a `position: fixed` zero-width hidden node so no ancestor's `overflow`
- * clips it and nothing in our layout is disturbed by the measurement.
- */
-function appHeight(): number {
-  const probe = document.createElement('div')
-  probe.style.cssText =
-    'position:fixed;top:0;left:0;width:0;height:var(--app-height);visibility:hidden;pointer-events:none'
-  document.body.append(probe)
-  const height = probe.getBoundingClientRect().height
-  probe.remove()
-  return height || window.innerHeight
 }
 
 /**

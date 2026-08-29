@@ -226,6 +226,57 @@ button {
 }
 
 /*
+ * Bottom action-sheet transition (ActionSheet.tsx). Same shape as the
+ * full-takeover Sheet above but with a real slide-up: the card starts fully
+ * below its own bottom edge, so the movement reads as the sheet arriving from
+ * off-screen rather than nudging into place. The scrim fades on its own timing
+ * so it is already dark by the time the card lands.
+ */
+@utility action-sheet-panel {
+  transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  transform: translateY(100%);
+}
+@utility action-sheet-panel-open {
+  transform: translateY(0);
+}
+@utility action-sheet-scrim {
+  transition: opacity 200ms ease-out;
+  opacity: 0;
+}
+@utility action-sheet-scrim-open {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action-sheet-panel,
+  .action-sheet-panel-open {
+    transition: none;
+    transform: none;
+  }
+  .action-sheet-scrim,
+  .action-sheet-scrim-open {
+    transition: none;
+    opacity: 1;
+  }
+}
+
+/*
+ * Swipe-to-delete row (SwipeToDelete.tsx). The sliding layer is translated
+ * directly in JS while a finger is down — no transition then, or it would lag
+ * the finger — and this class is added only for the snap back/open once the
+ * finger lifts.
+ */
+@utility swipe-snap {
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .swipe-snap {
+    transition: none;
+  }
+}
+
+/*
  * Rest-timer "time's up" flash. This is the alert of record when the ring
  * switch is on silent, so it pulses several times rather than fading once —
  * it has to survive being glanced at rather than watched.

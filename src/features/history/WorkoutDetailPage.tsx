@@ -8,6 +8,9 @@ import { useUnitPreference } from '../../hooks/useSettings'
 import { usePRProgression } from '../../hooks/usePRProgression'
 import { db } from '../../db/schema'
 import type { Exercise } from '../../db/types'
+// Same displayed numbering as the active workout — a warmup reads "W" and the
+// working sets renumber around it. Stored setNumber is untouched; see setTypes.
+import { SET_TYPE_LABELS, SET_TYPE_TEXT_CLASS, setDisplayInfo } from '../../lib/setTypes'
 import { computeWorkoutSummary } from './workoutStats'
 import { formatDate, formatDuration, formatTime } from '../../lib/dates'
 import { weightForDisplay } from '../../lib/units'
@@ -73,7 +76,8 @@ export function WorkoutDetailPage() {
           <div key={we.id} className="mt-3 first:mt-0">
             <p className="px-4 py-2 font-semibold text-slate-100">{we.exercise?.name ?? 'Exercise'}</p>
             <div className="px-4">
-              {we.sets.map((set) => {
+              {setDisplayInfo(we.sets).map((display, index) => {
+                const set = we.sets[index]
                 const flags = prProgression?.bySetId.get(set.id)
                 const isPR = Boolean(flags && (flags.isE1RMPR || flags.isWeightForRepsPR))
                 return (
@@ -81,7 +85,11 @@ export function WorkoutDetailPage() {
                     key={set.id}
                     className="flex items-center gap-3 border-b border-surface-2 py-2 text-sm"
                   >
-                    <span className="w-5 text-slate-500">{set.setNumber}</span>
+                    <span
+                      className={`w-5 font-mono font-semibold tabular-nums ${SET_TYPE_TEXT_CLASS[set.type]}`}
+                    >
+                      {display.label}
+                    </span>
                     <span className="font-mono tabular-nums text-slate-100">
                       {weightForDisplay(set.weightKg, unit)} {unit} × {set.reps}
                     </span>
@@ -89,7 +97,7 @@ export function WorkoutDetailPage() {
                       <span className="font-mono text-xs tabular-nums text-slate-500">RPE {set.rpe}</span>
                     )}
                     {set.type !== 'normal' && (
-                      <span className="text-xs text-slate-500 uppercase">{set.type}</span>
+                      <span className="text-xs text-slate-500">{SET_TYPE_LABELS[set.type]}</span>
                     )}
                     {isPR && (
                       <span className="flex items-center gap-1 text-xs font-semibold text-amber-400">

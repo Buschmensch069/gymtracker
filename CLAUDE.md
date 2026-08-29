@@ -176,6 +176,33 @@ weight in lb.
 - **Numeric inputs use `type="text"` + `inputMode="decimal"` or
   `inputMode="numeric"`** — never `type="number"`, which shows the wrong
   iOS keyboard and unwanted spinner UI. See `WeightRepsInput`.
+- **An editable field is a mounted `<input>`, never a button that becomes
+  one on tap.** `WeightRepsInput` used to render a numeral button and swap
+  in an input when tapped, focusing it from a `requestAnimationFrame`. By
+  the time that callback ran iOS no longer considered itself inside the
+  user gesture, so it moved the caret and *refused to raise the keyboard* —
+  every set cost two taps. A permanently-mounted input gets focus and the
+  keyboard from the browser's own tap handling, with no JS timing to get
+  wrong. If a field ever needs a display-only mode again, toggle
+  `readOnly`, not the element.
+- **A field with no real value yet renders empty with a placeholder, never
+  a literal `0`.** A rendered zero has to be cleared before every entry,
+  and — being a legitimate weight for bodyweight work — cannot be told from
+  a real one by looking at it. `SetLog.touched` is what distinguishes them
+  (see the Data Model note); untouched fields show the last-session value
+  as greyed placeholder text and the +/- steppers still step from it.
+  Focusing selects any existing value so the first keypress replaces it,
+  re-selected once in a `requestAnimationFrame` because iOS places the
+  caret from the tap *after* `focus` fires.
+- **Displayed set numbering is not `SetLog.setNumber`.** `setNumber` is the
+  stored position within the exercise and counts every row, warmups
+  included; `setDisplayInfo()` (`src/lib/setTypes.ts`) derives what the row
+  actually shows — the type's letter for warmup/failure/dropset, and a
+  number that counts working sets only, so flagging set 1 as a warmup
+  renumbers the rest instead of leaving the first working set called "2".
+  Presentation only: nothing is written back, and `ActiveWorkoutPage` and
+  `WorkoutDetailPage` both go through it so the same sets never number
+  differently in two places.
 - **No `position: fixed` for bottom action bars.** Use normal flex-flow
   layout (`flex flex-col`, scrollable middle section, bottom bar as a
   regular flex child) so the iOS keyboard doesn't fight fixed positioning.
@@ -264,6 +291,36 @@ old version silently breaks upgrades for anyone not starting from empty.
   tooltip lists which muscles are inside the fold for that week (carried on
   the row under `OTHER_PARTS_KEY`), in both the by-muscle and the grouped
   modes. Never ship an unexplained "Other" bar.
+- **Two sheet primitives, for two different jobs.** `Sheet` is a
+  full-screen takeover for content you browse (the exercise picker, the
+  reorder list). `ActionSheet` is the iOS-style bottom card for a short menu
+  of choices — losing the whole screen to three lines is heavy, and
+  bottom-anchoring keeps them under the thumb, which matters because these
+  are used one-handed mid-set. `ActionSheetItem` dismisses via context so
+  the exit animation finishes *before* the action runs; that ordering is
+  what lets one sheet open another (⋮ → Reorder Exercises) without the two
+  cross-fading. `pb-safe` is correct on `ActionSheet` — it is the
+  full-height overlay case the safe-area note carves out — but goes on a
+  wrapper, with the visual padding on the child.
+- **Destructive row actions swipe; they don't sit in the layout.**
+  `SwipeToDelete` (`components/ui/`) is the pattern for deleting a set. A
+  "Remove" button costs width on every row forever to serve an action taken
+  on one row in twenty, and that width is better spent on the weight and
+  reps fields. Two rules keep the gesture from fighting the row's own
+  controls: nothing engages until the finger has moved `ENGAGE_PX`
+  *horizontally and more horizontally than vertically* (so list scrolling
+  and taps on inputs both still work), and the click that follows an
+  engaged drag — or a tap that closes an already-open row — is swallowed in
+  the capture phase. Always leave a non-gesture path to the same action;
+  "Remove Set" lives in the set-type sheet for exactly that reason.
+- **A completed set is green, not accent.** The whole row takes an
+  `emerald-500/15` wash and the checkmark goes solid emerald. Cyan is the
+  accent used for *interactive* state app-wide, and reusing it for
+  completion made a finished set almost indistinguishable from an unfinished
+  one at a glance. The wash goes on the inner padded layer, not on
+  `SwipeToDelete`'s sliding layer, so it composites over the row's opaque
+  background instead of replacing it and letting the red panel show
+  through.
 - **`src/lib/analytics.ts`** is the single source of truth for
   tonnage/PR/muscle-set-weighting definitions — extend it there, don't
   recompute a metric inline in a chart or card component. In particular:
@@ -392,6 +449,34 @@ old version silently breaks upgrades for anyone not starting from empty.
     overflow, so numeric probes need no override at all. Keep the two halves
     separate, and treat any number that moves when the probe is toggled as
     the probe's, not the page's.
+- **The focused field is scrolled into view on `focus`, not on `input`.**
+  `useKeyboardScrollIntoView()` (`src/hooks/`, mounted once in `AppShell`)
+  owns this. Safari's own "reveal the focused field" does not run correctly
+  for a field inside a nested scroll container whose height changes
+  underneath it — which is exactly our layout, because the shell shrinks to
+  `visualViewport.height` when the keyboard opens (see
+  `useAppViewportHeight`). The symptom was that tapping an input opened the
+  keyboard with the field off-screen, and it only jumped into place after
+  the *first keystroke*: the resulting DOM change is what finally triggered
+  Safari's correction. Two things make the fix work and both are
+  load-bearing:
+  - It listens on `focusin` at the document, not per input. Wiring it to
+    `WeightRepsInput` alone would leave the notes textarea, the exercise
+    search and the rep-range fields with the original bug.
+  - It waits for the `visualViewport` resize burst to *settle*
+    (`SETTLE_MS` after the last one) before measuring, then scrolls on the
+    next frame. Scrolling on the first resize scrolls against the
+    pre-keyboard layout, which is the same wrong position by another route.
+    A `MAX_WAIT_MS` deadline covers the case where no resize is coming at
+    all, and moving between two fields while the keyboard is already up
+    skips the wait entirely — otherwise weight → reps would lag half a
+    second every set.
+
+  Shared viewport measurement (`appHeight()`, `isKeyboardOpen()`,
+  `visibleBottom()`, `KEYBOARD_MIN_SHRINK_PX`) lives in `src/lib/viewport.ts`
+  so this hook and `useAppViewportHeight` cannot drift into disagreeing about
+  which viewport is which — see the band note above for why
+  `window.innerHeight` is the wrong baseline in standalone.
 - **Safe-area utilities set padding outright, so never combine them with a
   `py-*`/`px-*` on the same element.** `pt-safe`/`pb-safe` are emitted
   after Tailwind's own padding utilities, so `py-3 pt-safe` loses the `py-3`
@@ -498,12 +583,13 @@ src/
                  feature-local hooks/subcomponents live together
   components/
     layout/      app shell chrome (bottom tab bar, page header)
-    ui/          generic reusable primitives (button, input, sheet, stepper,
-                 card, chip, textarea)
+    ui/          generic reusable primitives (button, input, sheet,
+                 action sheet, swipe-to-delete, stepper, card, chip,
+                 textarea)
   hooks/         cross-cutting hooks not tied to one feature (usePRProgression,
                  useLastSessionSet, useSettings, ...)
   lib/           pure helper functions (units, ids, dates, analytics,
-                 muscleColors, chartTheme)
+                 muscleColors, chartTheme, setTypes, viewport)
 ```
 
 ## Seed Data

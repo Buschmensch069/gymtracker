@@ -98,6 +98,67 @@ export async function addExerciseToWorkout(workoutId: string, exerciseId: string
   return id
 }
 
+/**
+ * Swaps which exercise a row in the workout is for, keeping its set rows.
+ *
+ * The set count is deliberately preserved (you replace an exercise because the
+ * rack is busy, not to redo the plan) but every set is reset to untouched and
+ * incomplete: the weights belonged to the old movement, and leaving them would
+ * both mislead and suppress the new exercise's last-session placeholder.
+ * Callers confirm first when there is real logged work to lose.
+ *
+ * `SetLog.exerciseId` is denormalized from the parent (see CLAUDE.md) with no
+ * referential integrity behind it, so it has to be rewritten here or every
+ * chart query would keep attributing these sets to the old exercise.
+ */
+export async function replaceExerciseInWorkout(
+  workoutExerciseId: string,
+  exerciseId: string,
+): Promise<void> {
+  await db.transaction('rw', db.workoutExercises, db.setLogs, async () => {
+    const workoutExercise = await db.workoutExercises.get(workoutExerciseId)
+    if (!workoutExercise || workoutExercise.exerciseId === exerciseId) return
+
+    await db.workoutExercises.update(workoutExerciseId, { exerciseId })
+    await db.setLogs
+      .where('workoutExerciseId')
+      .equals(workoutExerciseId)
+      .modify({
+        exerciseId,
+        weightKg: 0,
+        reps: 0,
+        rpe: undefined,
+        completed: false,
+        touched: false,
+      })
+  })
+}
+
+/**
+ * Writes a new `order` for the workout's exercises from the given id sequence.
+ * Ids not in the workout are ignored, and anything the caller left out keeps
+ * its relative position after the listed rows, so a stale list can reshuffle
+ * but never drop an exercise.
+ */
+export async function reorderWorkoutExercises(
+  workoutId: string,
+  orderedIds: string[],
+): Promise<void> {
+  await db.transaction('rw', db.workoutExercises, async () => {
+    const existing = await db.workoutExercises.where('workoutId').equals(workoutId).sortBy('order')
+    const byId = new Map(existing.map((we) => [we.id, we]))
+    const ordered = orderedIds.map((id) => byId.get(id)).filter((we) => we !== undefined)
+    const orderedSet = new Set(ordered.map((we) => we.id))
+    const sequence = [...ordered, ...existing.filter((we) => !orderedSet.has(we.id))]
+
+    await Promise.all(
+      sequence.map((we, index) =>
+        we.order === index ? Promise.resolve() : db.workoutExercises.update(we.id, { order: index }),
+      ),
+    )
+  })
+}
+
 export async function removeExerciseFromWorkout(workoutExerciseId: string): Promise<void> {
   await db.transaction('rw', db.workoutExercises, db.setLogs, async () => {
     await db.setLogs.where('workoutExerciseId').equals(workoutExerciseId).delete()

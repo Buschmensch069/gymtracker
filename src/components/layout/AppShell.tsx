@@ -1,5 +1,6 @@
 import { Outlet } from 'react-router-dom'
 import { useAppViewportHeight } from '../../hooks/useAppViewportHeight'
+import { useKeyboardScrollIntoView } from '../../hooks/useKeyboardScrollIntoView'
 import { ActiveWorkoutBanner } from '../../features/workout/ActiveWorkoutBanner'
 import { RestTimerController } from '../../features/workout/RestTimerController'
 import { BottomTabBar } from './BottomTabBar'
@@ -10,6 +11,10 @@ export function AppShell() {
   // This hook only returns a value when a JS correction is actually warranted
   // — in-browser chrome collapse, or an open keyboard. See the hook's docs.
   const viewportHeight = useAppViewportHeight()
+  // Document-level: brings the focused field above the keyboard on focus,
+  // once the viewport resize has settled. Mounted once for the same reason
+  // RestTimerController is — it is one behaviour, not one per field.
+  useKeyboardScrollIntoView()
 
   return (
     <div
