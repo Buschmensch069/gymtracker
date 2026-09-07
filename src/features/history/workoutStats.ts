@@ -1,4 +1,5 @@
 import { computeTonnage, isWorkingSet } from '../../lib/analytics'
+import { isHeavierKg, isSameWeightKg } from '../../lib/units'
 import type { WorkoutExerciseWithDetails } from '../workout/useActiveWorkout'
 
 export interface ExerciseLineData {
@@ -34,8 +35,12 @@ export function computeWorkoutSummary(workoutExercises: WorkoutExerciseWithDetai
     if (workingSets.length === 0) continue
 
     const first = workingSets[0]
-    const uniform = workingSets.every((s) => s.weightKg === first.weightKg && s.reps === first.reps)
-    const top = uniform ? first : workingSets.reduce((best, s) => (s.weightKg > best.weightKg ? s : best), first)
+    // `===` on weightKg would call two identical lb-entered sets non-uniform
+    // over a last-bit difference, turning "3x8 @ 100lb" into "3 sets, top ...".
+    const uniform = workingSets.every((s) => isSameWeightKg(s.weightKg, first.weightKg) && s.reps === first.reps)
+    const top = uniform
+      ? first
+      : workingSets.reduce((best, s) => (isHeavierKg(s.weightKg, best.weightKg) ? s : best), first)
 
     exerciseLines.push({
       workoutExerciseId: we.id,

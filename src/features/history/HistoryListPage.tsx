@@ -5,7 +5,7 @@ import { EmptyState } from '../../components/ui/EmptyState'
 import { Card } from '../../components/ui/Card'
 import { useUnitPreference } from '../../hooks/useSettings'
 import { formatDate, formatDuration, formatTime } from '../../lib/dates'
-import { weightForDisplay } from '../../lib/units'
+import { formatWeight, weightForDisplay } from '../../lib/units'
 import { useHistoryFeed, type HistoryWorkoutEntry } from './useHistoryFeed'
 import type { ExerciseLineData } from './workoutStats'
 import type { UnitPreference } from '../../db/types'
@@ -84,7 +84,7 @@ function HistoryCard({ entry, unit }: { entry: HistoryWorkoutEntry; unit: UnitPr
 }
 
 function ExerciseLine({ line, unit }: { line: ExerciseLineData; unit: UnitPreference }) {
-  const weight = weightForDisplay(line.weightKg, unit)
+  const weight = formatWeight(line.weightKg, unit)
   return (
     <p className="truncate">
       <span className="text-slate-300">{line.exerciseName}</span>{' '}

@@ -1,5 +1,6 @@
 import type { Exercise, PrimaryMuscle, SetLog, Workout } from '../db/types'
 import { formatWeekLabel, startOfWeek } from './dates'
+import { WEIGHT_EPSILON_KG, isHeavierKg } from './units'
 
 const MS_PER_WEEK = 7 * 86_400_000
 
@@ -17,6 +18,23 @@ export const MUSCLE_SET_WEIGHT = { primary: 1, secondary: 0.5 } as const
  */
 export const EPLEY_MAX_REPS_FOR_E1RM = 12
 
+/**
+ * Decimals an estimated-1RM readout is shown to. One, not zero: a 1.25kg
+ * micro-plate moves e1RM by a fraction of a unit, and rounding to whole units
+ * hides that step from both the PR list and the trend line. Not the full
+ * WEIGHT_DECIMALS either — it's an estimate, and two decimals would imply a
+ * precision the formula doesn't have.
+ */
+export const E1RM_DISPLAY_DECIMALS = 1
+
+/**
+ * WEIGHT_EPSILON_KG carried through Epley's rep factor: e1RM scales the
+ * weight by up to (1 + 12/30), so two weights that count as equal can differ
+ * by that much more once estimated. Comparing estimates against the unscaled
+ * tolerance would let the difference reappear as a spurious e1RM PR.
+ */
+const E1RM_EPSILON = WEIGHT_EPSILON_KG * (1 + EPLEY_MAX_REPS_FOR_E1RM / 30)
+
 export function computeE1RM(weightKg: number, reps: number): number | null {
   if (reps < 1 || reps > EPLEY_MAX_REPS_FOR_E1RM) return null
   return weightKg * (1 + reps / 30)
@@ -32,6 +50,12 @@ export function isWorkingSet(set: SetLog): boolean {
  * excluded, for consistency with computeWeeklyMuscleSets below — tonnage
  * here will read lower than tools that count warmup volume too. That's an
  * intentional definition choice, not a bug.
+ *
+ * Summing fractional weights leaves the usual binary residue: 6.25kg × 8 plus
+ * 62.5kg × 5 lands ~1e-13 off the round number. Harmless as it stands —
+ * every tonnage readout rounds to whole units — but a future *comparison* of
+ * two tonnages ("beat last week", say) would need `WEIGHT_EPSILON_KG`, the
+ * way the PR walk below does.
  */
 export function computeTonnage(sets: SetLog[]): number {
   return sets.filter(isWorkingSet).reduce((sum, set) => sum + set.weightKg * set.reps, 0)
@@ -199,14 +223,22 @@ export function computePRProgression(
       byExercise.set(set.exerciseId, snapshot)
     }
 
+    // Epsilon-compared, not `>`: repeating an identical lb-entered set would
+    // otherwise trip a PR off a last-bit difference. See WEIGHT_EPSILON_KG.
     const currentBestForReps = snapshot.bestByReps.get(set.reps)
-    const isWeightForRepsPR = !currentBestForReps || set.weightKg > currentBestForReps.weightKg
+    const isWeightForRepsPR =
+      !currentBestForReps || isHeavierKg(set.weightKg, currentBestForReps.weightKg)
     if (isWeightForRepsPR) {
       snapshot.bestByReps.set(set.reps, { weightKg: set.weightKg, date: set.timestamp, setId: set.id })
     }
 
+    // e1RM is weight-scaled (weight x a rep factor), so the same tolerance
+    // applies — and it matters more here, because the rep factor turns an
+    // exact weight into a repeating fraction.
     const e1rm = computeE1RM(set.weightKg, set.reps)
-    const isE1RMPR = e1rm !== null && (!snapshot.bestE1RM || e1rm > snapshot.bestE1RM.value)
+    const isE1RMPR =
+      e1rm !== null &&
+      (!snapshot.bestE1RM || e1rm - snapshot.bestE1RM.value > E1RM_EPSILON)
     if (isE1RMPR && e1rm !== null) {
       snapshot.bestE1RM = { value: e1rm, weightKg: set.weightKg, reps: set.reps, date: set.timestamp, setId: set.id }
     }

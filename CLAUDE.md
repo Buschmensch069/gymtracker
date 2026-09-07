@@ -140,6 +140,28 @@ in Settings (`settings` table, key `unitPreference`) only affects display
 formatting (`src/lib/units.ts`) — never the stored value. Never store a
 weight in lb.
 
+**Weights are fractional.** Micro-plates and cable stacks aren't whole
+numbers, so `weightKg` carries real decimals and `WEIGHT_DECIMALS` (2, in
+`src/lib/decimal.ts`) is the precision the whole path agrees on — what the
+field accepts, what gets stored, what gets shown. It has to be one number,
+because the weight field round-trips through the display: `weightForDisplay`
+rounding to 1dp used to turn a stored 6.25 into a shown 6.3, and the next
+stepper tap wrote that 6.3 back. Two rules follow:
+
+- **Never compare `weightKg` with `===`/`>`.** Use `isSameWeightKg` /
+  `isHeavierKg` (`units.ts`), which allow `WEIGHT_EPSILON_KG` (5g). The
+  same physical weight reaches the table by several routes — 60lb typed
+  here stores 27.2155422, 60lb imported from a tool that rounded its kg
+  stores 27.216 — and both render "60 lb" while a bare `>` calls the second
+  a PR over the first. The epsilon is sized against *display* resolution
+  (0.01lb ≈ 0.0045kg), not float noise; it still sits an order of magnitude
+  below the smallest real increment (a 0.25lb plate is 0.113kg), so genuine
+  micro-plate PRs register.
+- **Display goes through `formatWeight`, not `weightForDisplay` +
+  `toFixed`.** 6.25 must read "6.25" and 80 must read "80" — a fixed
+  `toFixed(n)` can't do both. `weightForDisplay` stays for the places that
+  need a *number* (an input's value, a chart's y-value).
+
 ## Conventions
 
 - **Dexie is the single source of truth.** Reads go through
@@ -188,6 +210,19 @@ weight in lb.
 - **Numeric inputs use `type="text"` + `inputMode="decimal"` or
   `inputMode="numeric"`** — never `type="number"`, which shows the wrong
   iOS keyboard and unwanted spinner UI. See `WeightRepsInput`.
+- **Text in and out of a numeric field goes through `src/lib/decimal.ts` —
+  never `parseFloat`/`toFixed` directly.** `parseFloat('6,25')` returns 6:
+  it stops at the comma and discards the rest without an error, which is
+  exactly what a decimal-hostile weight field looks like from the outside.
+  The iOS `inputMode="decimal"` keypad shows the *locale's* separator, so on
+  a German keyboard the decimal key sends "," — both separators are accepted
+  and normalised to "." in `parseDecimal`/`sanitizeDecimalInput`, in one
+  place, so no field has to remember. `sanitizeDecimalInput` runs on every
+  keystroke *before* the draft is shown, capping decimals as they're typed:
+  the box can never hold more precision than gets stored, so nothing shifts
+  under the caret on blur. `roundTo` is used instead of
+  `Math.round(x * 10 ** n) / 10 ** n` because the naive form rounds 6.005
+  down (the scaled product is 600.4999999999999).
 - **An editable field is a mounted `<input>`, never a button that becomes
   one on tap.** `WeightRepsInput` used to render a numeral button and swap
   in an input when tapped, focusing it from a `requestAnimationFrame`. By
@@ -385,13 +420,19 @@ old version silently breaks upgrades for anyone not starting from empty.
 - **`src/lib/analytics.ts`** is the single source of truth for
   tonnage/PR/muscle-set-weighting definitions — extend it there, don't
   recompute a metric inline in a chart or card component. In particular:
-  - `MUSCLE_SET_WEIGHT` (primary 1.0 / secondary 0.5) and
-    `EPLEY_MAX_REPS_FOR_E1RM` (12) are documented constants, not magic
-    numbers.
+  - `MUSCLE_SET_WEIGHT` (primary 1.0 / secondary 0.5),
+    `EPLEY_MAX_REPS_FOR_E1RM` (12) and `E1RM_DISPLAY_DECIMALS` (1 — a
+    micro-plate moves e1RM by a fraction of a unit, and whole units hide
+    that step) are documented constants, not magic numbers.
   - `isWorkingSet` (`completed && type !== 'warmup'`) is the shared
     definition behind every volume/PR metric.
   - `computeTonnage` deliberately **excludes warmups** — totals read lower
     than tools that count warmup volume. Intentional, not a bug.
+  - PR comparisons are **epsilon-based**, per the `WEIGHT_EPSILON_KG` note
+    in Data Model above. e1RM uses `E1RM_EPSILON` — the same tolerance
+    carried through Epley's rep factor, since e1RM scales the weight by up
+    to 1.4 and the unscaled tolerance would let the difference reappear as
+    a spurious PR.
   - `computePRProgression` is the single shared PR-detection pass (walks
     every working set chronologically, tracks running bests per exercise)
     — used by History card badges, `WorkoutDetailPage` per-set badges, and
@@ -685,8 +726,8 @@ src/
                  textarea)
   hooks/         cross-cutting hooks not tied to one feature (usePRProgression,
                  useLastSessionSet, useSettings, ...)
-  lib/           pure helper functions (units, ids, dates, analytics,
-                 muscleColors, chartTheme, setTypes, viewport)
+  lib/           pure helper functions (units, decimal, ids, dates,
+                 analytics, muscleColors, chartTheme, setTypes, viewport)
 ```
 
 ## Seed Data

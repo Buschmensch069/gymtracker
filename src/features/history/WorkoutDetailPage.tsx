@@ -13,7 +13,7 @@ import type { Exercise } from '../../db/types'
 import { SET_TYPE_LABELS, SET_TYPE_TEXT_CLASS, setDisplayInfo } from '../../lib/setTypes'
 import { computeWorkoutSummary } from './workoutStats'
 import { formatDate, formatDuration, formatTime } from '../../lib/dates'
-import { weightForDisplay } from '../../lib/units'
+import { formatWeight, weightForDisplay } from '../../lib/units'
 import { useWorkoutExercises } from '../workout/useActiveWorkout'
 import { MuscleSplitBars } from './MuscleSplitBars'
 import { useWorkout } from './useWorkoutHistory'
@@ -91,7 +91,7 @@ export function WorkoutDetailPage() {
                       {display.label}
                     </span>
                     <span className="font-mono tabular-nums text-slate-100">
-                      {weightForDisplay(set.weightKg, unit)} {unit} × {set.reps}
+                      {formatWeight(set.weightKg, unit)} {unit} × {set.reps}
                     </span>
                     {set.rpe !== undefined && (
                       <span className="font-mono text-xs tabular-nums text-slate-500">RPE {set.rpe}</span>

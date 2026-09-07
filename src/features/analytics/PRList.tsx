@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { Card } from '../../components/ui/Card'
-import { computePRProgression } from '../../lib/analytics'
+import { E1RM_DISPLAY_DECIMALS, computePRProgression } from '../../lib/analytics'
 import { formatDate } from '../../lib/dates'
-import { weightForDisplay } from '../../lib/units'
+import { formatWeight } from '../../lib/units'
 import type { UnitPreference } from '../../db/types'
 import { EmptyChart } from './EmptyChart'
 import type { AnalyticsData } from './useAnalyticsData'
@@ -41,7 +41,7 @@ export function PRList({ data, unit }: { data: AnalyticsData; unit: UnitPreferen
                 <p className="font-medium text-slate-100">{name}</p>
                 {snapshot.bestE1RM ? (
                   <p className="font-mono text-sm tabular-nums text-slate-500">
-                    Est. 1RM {Math.round(weightForDisplay(snapshot.bestE1RM.value, unit))} {unit} ·{' '}
+                    Est. 1RM {formatWeight(snapshot.bestE1RM.value, unit, E1RM_DISPLAY_DECIMALS)} {unit} ·{' '}
                     {formatDate(snapshot.bestE1RM.date)}
                   </p>
                 ) : (
@@ -61,7 +61,7 @@ export function PRList({ data, unit }: { data: AnalyticsData; unit: UnitPreferen
                   <div key={reps} className="flex items-center justify-between py-1.5 text-sm">
                     <span className="text-slate-400">{reps} rep{reps === 1 ? '' : 's'}</span>
                     <span className="font-mono tabular-nums text-slate-100">
-                      {Math.round(weightForDisplay(best.weightKg, unit) * 10) / 10} {unit}
+                      {formatWeight(best.weightKg, unit)} {unit}
                     </span>
                     <span className="text-slate-500">{formatDate(best.date)}</span>
                   </div>

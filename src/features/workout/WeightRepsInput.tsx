@@ -1,11 +1,13 @@
 import { useRef, useState } from 'react'
 import { StepperButton } from '../../components/ui/Stepper'
+import { formatDecimal, parseDecimal, roundTo, sanitizeDecimalInput } from '../../lib/decimal'
 
 interface WeightRepsInputProps {
   value: number
   onChange: (value: number) => void
   step: number
-  decimals?: 0 | 1
+  /** Decimal places the field accepts and shows. 0 makes it an integer field (reps). */
+  maxDecimals?: number
   inputMode?: 'numeric' | 'decimal'
   min?: number
   boxWidthClass?: string
@@ -35,12 +37,15 @@ interface WeightRepsInputProps {
  * its placeholder, rather than a real "0". A rendered 0 has to be cleared
  * before every entry, and (being a legitimate value for bodyweight work) it
  * cannot be distinguished from a real one by looking at it.
+ *
+ * Text in and out of the box goes through `src/lib/decimal.ts` — never
+ * `parseFloat`, which reads "6,25" as 6 and drops the rest without a word.
  */
 export function WeightRepsInput({
   value,
   onChange,
   step,
-  decimals = 0,
+  maxDecimals = 0,
   inputMode = 'numeric',
   min = 0,
   boxWidthClass = 'w-16',
@@ -60,20 +65,17 @@ export function WeightRepsInput({
   // (so the first nudge confirms it, rather than starting from 0), the real
   // stored value once touched.
   const base = !touched && placeholder !== undefined ? placeholder : value
-  const committed = touched ? formatValue(value, decimals) : ''
-
-  const round = (n: number) => {
-    const factor = 10 ** decimals
-    return Math.round(n * factor) / factor
-  }
+  const committed = touched ? formatDecimal(value, maxDecimals) : ''
 
   const commit = (raw: string) => {
-    const parsed = parseFloat(raw)
-    // An empty (or mid-edit "-"/".") field commits nothing: clearing the box
+    const parsed = parseDecimal(raw)
+    // An empty (or mid-edit "."/"6.") field commits nothing: clearing the box
     // is how you retype it, not how you set it to zero.
-    if (Number.isNaN(parsed)) return
-    onChange(Math.max(min, round(parsed)))
+    if (parsed === null) return
+    onChange(Math.max(min, roundTo(parsed, maxDecimals)))
   }
+
+  const stepBy = (delta: number) => onChange(Math.max(min, roundTo(base + delta, maxDecimals)))
 
   const selectAll = () => {
     const input = inputRef.current
@@ -83,19 +85,20 @@ export function WeightRepsInput({
 
   return (
     <div className="flex items-center gap-1">
-      <StepperButton compact={compact} label={`Decrease ${ariaLabel}`} onStep={() => onChange(Math.max(min, round(base - step)))}>
+      <StepperButton compact={compact} label={`Decrease ${ariaLabel}`} onStep={() => stepBy(-step)}>
         −
       </StepperButton>
 
+      {/* pattern allows both separators — either key may be what the keypad offers. */}
       <input
         ref={inputRef}
         type="text"
         inputMode={inputMode}
-        pattern={inputMode === 'decimal' ? '[0-9]*\\.?[0-9]*' : '[0-9]*'}
+        pattern={maxDecimals > 0 ? '[0-9]*[.,]?[0-9]*' : '[0-9]*'}
         enterKeyHint="done"
         aria-label={ariaLabel}
         value={draft ?? committed}
-        placeholder={formatValue(placeholder ?? 0, decimals)}
+        placeholder={formatDecimal(placeholder ?? 0, maxDecimals)}
         onFocus={() => {
           setDraft(committed)
           // Selected so the first keypress replaces the set's value instead of
@@ -105,23 +108,31 @@ export function WeightRepsInput({
           requestAnimationFrame(selectAll)
         }}
         onChange={(e) => {
-          setDraft(e.target.value)
+          // Sanitised before it is shown, so the box can only ever hold a
+          // number this field is willing to store — one separator, in "."
+          // form whichever key the keypad sent, and no more decimals than
+          // get saved. Nothing shifts under the caret later.
+          const next = sanitizeDecimalInput(e.target.value, maxDecimals)
+          // A *rejected* keystroke leaves `next` equal to the draft already
+          // in state, so React sees no change, doesn't re-render, and leaves
+          // the raw text sitting in the DOM — the second "." of "6.." would
+          // stay visible even though the field's value is "6.". Writing the
+          // sanitised text straight back to the node re-syncs it (and the
+          // value tracker with it, so the next keystroke still fires change).
+          if (e.target.value !== next) e.target.value = next
+          setDraft(next)
           // Committed per keystroke, not on blur: a set typed and then
           // interrupted (phone locks, app is swapped out) is still logged.
-          commit(e.target.value)
+          commit(next)
         }}
         onBlur={() => setDraft(null)}
         onKeyDown={(e) => e.key === 'Enter' && inputRef.current?.blur()}
         className={`h-11 ${boxWidthClass} rounded-xl bg-surface-1 text-center font-mono text-xl tabular-nums text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-accent`}
       />
 
-      <StepperButton compact={compact} label={`Increase ${ariaLabel}`} onStep={() => onChange(Math.max(min, round(base + step)))}>
+      <StepperButton compact={compact} label={`Increase ${ariaLabel}`} onStep={() => stepBy(step)}>
         +
       </StepperButton>
     </div>
   )
-}
-
-function formatValue(value: number, decimals: number): string {
-  return decimals > 0 ? value.toFixed(decimals) : String(Math.round(value))
 }

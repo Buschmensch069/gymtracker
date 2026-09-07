@@ -1,5 +1,5 @@
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { computeE1RM, isWorkingSet } from '../../lib/analytics'
+import { E1RM_DISPLAY_DECIMALS, computeE1RM, isWorkingSet } from '../../lib/analytics'
 import { CHART_ACCENT, CHART_AXIS_TICK, CHART_GRID, CHART_TOOLTIP_STYLE } from '../../lib/chartTheme'
 import { formatDate } from '../../lib/dates'
 import { type AnalyticsTimeRange, startTimestampForRange } from '../../lib/timeRange'
@@ -40,7 +40,9 @@ export function E1RMChart({
     .sort((a, b) => a.timestamp - b.timestamp)
     .map((entry) => ({
       label: formatDate(entry.timestamp),
-      e1rm: Math.round(weightForDisplay(entry.e1rm, unit)),
+      // One decimal, not whole units: a 1.25kg micro-plate step moves e1RM
+      // by well under 1, and rounding it off flattens the trend line.
+      e1rm: weightForDisplay(entry.e1rm, unit, E1RM_DISPLAY_DECIMALS),
     }))
 
   if (rows.length === 0) {

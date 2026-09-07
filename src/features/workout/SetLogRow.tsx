@@ -3,6 +3,7 @@ import { Check } from 'lucide-react'
 import { SwipeToDelete } from '../../components/ui/SwipeToDelete'
 import type { SetLog, SetType, UnitPreference } from '../../db/types'
 import { useLastSessionSet } from '../../hooks/useLastSessionSet'
+import { WEIGHT_DECIMALS } from '../../lib/decimal'
 import type { SetDisplay } from '../../lib/setTypes'
 import { SET_TYPE_LABELS, SET_TYPE_TEXT_CLASS } from '../../lib/setTypes'
 import { weightForDisplay, weightStep, weightToKg } from '../../lib/units'
@@ -69,7 +70,7 @@ export function SetLogRow({ set, unit, display, restSeconds, exerciseName }: Set
               value={weightForDisplay(set.weightKg, unit)}
               onChange={(v) => updateSet(set.id, { weightKg: weightToKg(v, unit) })}
               step={weightStep(unit)}
-              decimals={1}
+              maxDecimals={WEIGHT_DECIMALS}
               inputMode="decimal"
               boxWidthClass="w-16"
               touched={touched}
