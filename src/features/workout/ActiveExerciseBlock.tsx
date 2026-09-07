@@ -2,8 +2,11 @@ import { EllipsisVertical } from 'lucide-react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { MUSCLE_LABELS, type UnitPreference } from '../../db/types'
+import { useLastSession } from '../../hooks/useLastSession'
+import { computeTonnage, type SetComparison } from '../../lib/analytics'
 import { MUSCLE_COLORS } from '../../lib/muscleColors'
 import { setDisplayInfo } from '../../lib/setTypes'
+import { ComparisonBadge } from './ComparisonBadge'
 import { SetLogRow } from './SetLogRow'
 import { addSet, type WorkoutExerciseWithDetails } from './useActiveWorkout'
 
@@ -56,6 +59,11 @@ export function ActiveExerciseBlock({
   const name = workoutExercise.exercise?.name ?? 'Exercise'
   const muscle = workoutExercise.exercise?.primaryMuscle
 
+  // One query for the whole block, handed down to every row — see useLastSession.
+  const lastSession = useLastSession(workoutExercise.exerciseId, workoutExercise.workoutId)
+  const workingPositions = workingPositionsFor(workoutExercise.sets)
+  const volume = compareVolume(computeTonnage(workoutExercise.sets), lastSession?.volumeKg)
+
   return (
     <div
       ref={setNodeRef}
@@ -94,6 +102,7 @@ export function ActiveExerciseBlock({
             {MUSCLE_LABELS[muscle]}
           </span>
         )}
+        {volume && <ComparisonBadge direction={volume.direction} text={volume.text} label={volume.label} />}
         <button
           type="button"
           onClick={onOpenMenu}
@@ -112,6 +121,8 @@ export function ActiveExerciseBlock({
           display={displays[index]}
           restSeconds={restSeconds}
           exerciseName={workoutExercise.exercise?.name}
+          lastSession={lastSession}
+          workingPosition={workingPositions[index]}
         />
       ))}
 
@@ -135,4 +146,47 @@ export function ActiveExerciseBlock({
       )}
     </div>
   )
+}
+
+/**
+ * Each row's 1-based position among the block's non-warmup rows; `undefined`
+ * for a warmup, which has no counterpart to compare against. Counts every
+ * non-warmup row, completed or not, because it is the row's position in the
+ * plan — a set you haven't finished yet still occupies its slot.
+ */
+function workingPositionsFor(sets: { type: string }[]): (number | undefined)[] {
+  let position = 0
+  return sets.map((set) => {
+    if (set.type === 'warmup') return undefined
+    position += 1
+    return position
+  })
+}
+
+/**
+ * This session's volume on the exercise so far against last session's total.
+ *
+ * "So far" is the honest reading and it is why down is muted rather than red:
+ * one set into three, you are behind by construction. The useful moment is
+ * the arrow flipping green, which is exactly when this session's work has
+ * passed last session's — a running answer to "have I done enough yet?".
+ * Hidden entirely until something is banked, so a fresh block doesn't open
+ * on a −100%.
+ */
+function compareVolume(
+  currentKg: number,
+  previousKg: number | undefined,
+): { direction: SetComparison; text: string; label: string } | undefined {
+  if (!previousKg || currentKg <= 0) return undefined
+
+  const ratio = currentKg / previousKg
+  const percent = Math.round((ratio - 1) * 100)
+  if (percent === 0) {
+    return { direction: 'same', text: '', label: 'Volume so far matches last session' }
+  }
+  return {
+    direction: percent > 0 ? 'up' : 'down',
+    text: `${percent > 0 ? '+' : ''}${percent}%`,
+    label: `Volume so far is ${percent > 0 ? 'ahead of' : 'behind'} last session by ${Math.abs(percent)}%`,
+  }
 }

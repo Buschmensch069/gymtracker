@@ -2,11 +2,13 @@ import { useState } from 'react'
 import { Check } from 'lucide-react'
 import { SwipeToDelete } from '../../components/ui/SwipeToDelete'
 import type { SetLog, SetType, UnitPreference } from '../../db/types'
-import { useLastSessionSet } from '../../hooks/useLastSessionSet'
+import type { LastSession } from '../../hooks/useLastSession'
+import { compareSets } from '../../lib/analytics'
 import { WEIGHT_DECIMALS } from '../../lib/decimal'
 import type { SetDisplay } from '../../lib/setTypes'
 import { SET_TYPE_LABELS, SET_TYPE_TEXT_CLASS } from '../../lib/setTypes'
-import { weightForDisplay, weightStep, weightToKg } from '../../lib/units'
+import { formatWeight, weightForDisplay, weightStep, weightToKg } from '../../lib/units'
+import { ComparisonBadge } from './ComparisonBadge'
 import { SetTypeSheet } from './SetTypeSheet'
 import { WeightRepsInput } from './WeightRepsInput'
 import { deleteSet, updateSet } from './useActiveWorkout'
@@ -23,12 +25,35 @@ interface SetLogRowProps {
   /** Resolved rest for this exercise; 0 disables the timer for it. */
   restSeconds: number
   exerciseName: string | undefined
+  /** Previous session's work on this exercise — queried once per block, see useLastSession. */
+  lastSession: LastSession | undefined
+  /**
+   * This row's position among the exercise's non-warmup rows, 1-based. Not
+   * `display.label` (a dropset shows "D", not a number) and not `setNumber`
+   * (which counts warmups) — it is the index that lines this set up with the
+   * same-numbered set of the previous session.
+   */
+  workingPosition: number | undefined
 }
 
-export function SetLogRow({ set, unit, display, restSeconds, exerciseName }: SetLogRowProps) {
-  const lastSession = useLastSessionSet(set.exerciseId, set.workoutId)
+export function SetLogRow({
+  set,
+  unit,
+  display,
+  restSeconds,
+  exerciseName,
+  lastSession,
+  workingPosition,
+}: SetLogRowProps) {
   const [showTypeSheet, setShowTypeSheet] = useState(false)
   const touched = set.touched ?? true
+
+  // Only once the set is actually banked: an in-progress row is compared
+  // against a number the lifter hasn't committed to yet, and would flicker
+  // between arrows on every keystroke.
+  const previous =
+    set.completed && workingPosition !== undefined ? lastSession?.sets[workingPosition - 1] : undefined
+  const comparison = previous ? compareSets(set, previous) : undefined
 
   const remove = () => deleteSet(set.id, set.workoutExerciseId)
 
@@ -74,7 +99,7 @@ export function SetLogRow({ set, unit, display, restSeconds, exerciseName }: Set
               inputMode="decimal"
               boxWidthClass="w-16"
               touched={touched}
-              placeholder={lastSession ? weightForDisplay(lastSession.weightKg, unit) : undefined}
+              placeholder={lastSession ? weightForDisplay(lastSession.lastSet.weightKg, unit) : undefined}
             />
 
             <WeightRepsInput
@@ -86,7 +111,7 @@ export function SetLogRow({ set, unit, display, restSeconds, exerciseName }: Set
               inputMode="numeric"
               boxWidthClass="w-10"
               touched={touched}
-              placeholder={lastSession?.reps}
+              placeholder={lastSession?.lastSet.reps}
             />
 
             <button
@@ -117,6 +142,16 @@ export function SetLogRow({ set, unit, display, restSeconds, exerciseName }: Set
               <span className={`text-[11px] font-medium ${SET_TYPE_TEXT_CLASS[set.type]}`}>
                 {SET_TYPE_LABELS[set.type]}
               </span>
+            )}
+            {/* On the RPE line, never in the set row itself: that row is
+                within ~18px of filling a 390pt screen, so anything added
+                beside the inputs comes out of the weight and reps fields.
+                This line has the space going spare. */}
+            {comparison && previous && (
+              <ComparisonBadge
+                direction={comparison}
+                label={`Last time: ${formatWeight(previous.weightKg, unit)} ${unit} × ${previous.reps}`}
+              />
             )}
           </div>
         </div>

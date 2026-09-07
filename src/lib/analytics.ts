@@ -179,6 +179,209 @@ export function computeWeeklyTonnage(setLogs: SetLog[], workouts: Workout[], wee
   return weeks
 }
 
+/**
+ * How one set compares with the set that held the same position last session.
+ * `mixed` is its own answer on purpose: trading weight for reps (80×5 after
+ * 70×8) is neither progress nor regression, and forcing it into one of those
+ * would put a green arrow on a session the lifter would not call better.
+ */
+export type SetComparison = 'up' | 'down' | 'same' | 'mixed'
+
+/**
+ * Compares a set against the same-numbered set of the previous session.
+ *
+ * "Better" is defined the way it reads at the rack: more weight without
+ * dropping reps, or the same weight for more reps. Weight is compared with
+ * `isHeavierKg`, never `>` — see the WEIGHT_EPSILON_KG note in units.ts, or
+ * repeating an identical set imported from another tool shows an arrow.
+ */
+export function compareSets(
+  current: { weightKg: number; reps: number },
+  previous: { weightKg: number; reps: number },
+): SetComparison {
+  const weight = isHeavierKg(current.weightKg, previous.weightKg)
+    ? 1
+    : isHeavierKg(previous.weightKg, current.weightKg)
+      ? -1
+      : 0
+  const reps = Math.sign(current.reps - previous.reps)
+
+  if (weight === 0 && reps === 0) return 'same'
+  if (weight >= 0 && reps >= 0) return 'up'
+  if (weight <= 0 && reps <= 0) return 'down'
+  return 'mixed'
+}
+
+/**
+ * Minimum distinct sessions before this app will describe an exercise as
+ * progressing or stalled.
+ *
+ * Four, because the first session is only a baseline — it establishes the
+ * number the others are measured against — leaving three chances to beat it.
+ * Two flat sessions is an ordinary bad week (poor sleep, a deload, a busy
+ * rack); three starts to be a pattern worth naming. At a typical once- or
+ * twice-weekly cadence four sessions is also roughly a month of data, which
+ * is the shortest span over which "no progress" means anything at all.
+ * Below this the section says how many sessions are still needed rather
+ * than showing a trend nobody should act on.
+ */
+export const MIN_SESSIONS_FOR_REP_TREND = 4
+
+/** Weeks without a heavier set at the anchor rep count before an exercise counts as stalled. */
+export const STALL_WEEKS = 8
+
+const MS_PER_DAY = 86_400_000
+
+export interface RepBest {
+  reps: number
+  bestWeightKg: number
+  /**
+   * When the current best was first hit. For a rep count trained only once
+   * this is simply when it was achieved — there was nothing to improve on.
+   */
+  lastImprovedAt: number
+  setCount: number
+  sessionCount: number
+}
+
+export interface ExerciseRepProgress {
+  exerciseId: string
+  /** Distinct workouts containing at least one working set of this exercise. */
+  sessionCount: number
+  lastSessionAt: number
+  /** Best weight per rep count, heaviest rep counts last. */
+  repBests: RepBest[]
+  /**
+   * The rep count with the most working sets — the one a stall is judged at,
+   * since it's where this lifter actually trains the movement. Ties go to the
+   * more recently used rep count.
+   */
+  anchor: RepBest | undefined
+  weeksSinceImprovement: number | undefined
+  hasEnoughData: boolean
+  /**
+   * Not trained inside the stall window at all. Kept separate from `stalled`:
+   * an exercise you dropped two months ago hasn't plateaued, and flagging it
+   * would bury the ones you are actually grinding on.
+   */
+  dormant: boolean
+  stalled: boolean
+}
+
+/**
+ * Best weight at each rep count for one exercise, with the date each best was
+ * last improved — the "am I getting stronger at this movement?" question
+ * answered without an estimated-1RM model. Nothing here extrapolates: every
+ * number shown is a set that was actually performed.
+ *
+ * Deliberately spans all history rather than the Analytics time range, for
+ * the same reason the PR list does: "best at 8 reps" means best ever, and a
+ * windowed version of it would silently disagree with the PR list. The stall
+ * window needs a longer lookback than the default 8-week range can give it
+ * anyway.
+ */
+export function computeRepProgress(exerciseId: string, sets: SetLog[], now = Date.now()): ExerciseRepProgress {
+  const working = sets
+    .filter((set) => set.exerciseId === exerciseId && isWorkingSet(set))
+    .slice()
+    .sort((a, b) => a.timestamp - b.timestamp)
+
+  const sessionIds = new Set(working.map((set) => set.workoutId))
+  const lastSessionAt = working.length ? working[working.length - 1].timestamp : 0
+
+  const byReps = new Map<number, RepBest & { sessions: Set<string>; lastUsedAt: number }>()
+  for (const set of working) {
+    const entry = byReps.get(set.reps)
+    if (!entry) {
+      byReps.set(set.reps, {
+        reps: set.reps,
+        bestWeightKg: set.weightKg,
+        lastImprovedAt: set.timestamp,
+        setCount: 1,
+        sessionCount: 1,
+        sessions: new Set([set.workoutId]),
+        lastUsedAt: set.timestamp,
+      })
+      continue
+    }
+    entry.setCount += 1
+    entry.sessions.add(set.workoutId)
+    entry.sessionCount = entry.sessions.size
+    entry.lastUsedAt = set.timestamp
+    // Walked chronologically, so the first set to clear the running best is
+    // the improvement — a later equal set doesn't reset the date.
+    if (isHeavierKg(set.weightKg, entry.bestWeightKg)) {
+      entry.bestWeightKg = set.weightKg
+      entry.lastImprovedAt = set.timestamp
+    }
+  }
+
+  const entries = Array.from(byReps.values())
+  const repBests: RepBest[] = entries
+    .map(({ reps, bestWeightKg, lastImprovedAt, setCount, sessionCount }) => ({
+      reps,
+      bestWeightKg,
+      lastImprovedAt,
+      setCount,
+      sessionCount,
+    }))
+    .sort((a, b) => a.reps - b.reps)
+
+  const anchorEntry = entries.reduce<(typeof entries)[number] | undefined>((best, entry) => {
+    if (!best) return entry
+    if (entry.setCount !== best.setCount) return entry.setCount > best.setCount ? entry : best
+    return entry.lastUsedAt > best.lastUsedAt ? entry : best
+  }, undefined)
+  const anchor = anchorEntry && repBests.find((rep) => rep.reps === anchorEntry.reps)
+
+  const sessionCount = sessionIds.size
+  const hasEnoughData = sessionCount >= MIN_SESSIONS_FOR_REP_TREND
+  const weeksSinceImprovement = anchor
+    ? Math.floor((now - anchor.lastImprovedAt) / (7 * MS_PER_DAY))
+    : undefined
+  const dormant = working.length > 0 && now - lastSessionAt > STALL_WEEKS * 7 * MS_PER_DAY
+
+  return {
+    exerciseId,
+    sessionCount,
+    lastSessionAt,
+    repBests,
+    anchor,
+    weeksSinceImprovement,
+    hasEnoughData,
+    dormant,
+    stalled:
+      hasEnoughData &&
+      !dormant &&
+      weeksSinceImprovement !== undefined &&
+      weeksSinceImprovement >= STALL_WEEKS,
+  }
+}
+
+/**
+ * `computeRepProgress` for every exercise that has been trained at all, keyed
+ * by exercise id. One pass over the set logs, in keeping with the Analytics
+ * tab's load-everything-once approach.
+ */
+export function computeRepProgressByExercise(
+  allSetLogs: SetLog[],
+  now = Date.now(),
+): Map<string, ExerciseRepProgress> {
+  const byExercise = new Map<string, SetLog[]>()
+  for (const set of allSetLogs) {
+    if (!isWorkingSet(set)) continue
+    const list = byExercise.get(set.exerciseId) ?? []
+    list.push(set)
+    byExercise.set(set.exerciseId, list)
+  }
+
+  const result = new Map<string, ExerciseRepProgress>()
+  for (const [exerciseId, sets] of byExercise) {
+    result.set(exerciseId, computeRepProgress(exerciseId, sets, now))
+  }
+  return result
+}
+
 export interface SetPRFlags {
   isE1RMPR: boolean
   isWeightForRepsPR: boolean

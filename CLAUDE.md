@@ -409,6 +409,33 @@ old version silently breaks upgrades for anyone not starting from empty.
   between the drop and the write landing. "Reorder Exercises" in the per-
   exercise menu stays as the non-gesture path to the same action, per the
   `SwipeToDelete` rule above.
+- **The "versus last time" indicator is a readout, not a reward.** A
+  completed set shows a small arrow comparing it with the same-numbered set
+  of the previous session (`compareSets`), and the exercise heading shows
+  this session's volume so far against last session's total. Only `up` is
+  coloured — a green arrow is the one state worth catching across a gym.
+  Making `down` red would turn an ordinary lighter day into an alarm on a
+  screen you look at twenty times a workout, so down and matched are the
+  same muted slate as the rest of the secondary line. No animation, ever.
+  Three placement rules:
+  - **The set's arrow lives on the RPE line, never in the set row itself.**
+    That row is within ~18px of filling a 390pt screen, so anything added
+    beside the inputs comes straight out of the weight and reps fields. The
+    secondary line has the space going spare.
+  - **Position is counted over non-warmup rows**, not `SetLog.setNumber`
+    (which counts warmups) and not `display.label` (a dropset reads "D").
+    That index is what lines a set up with its counterpart last session.
+  - **The heading's volume comparison is "so far", and that is why down is
+    muted.** One set into three you are behind by construction; the useful
+    moment is the arrow flipping green, which is exactly when this session
+    has passed the last one. It stays hidden until something is banked, so
+    a fresh block never opens on a −100%.
+- **One last-session query per exercise block, not per set row.**
+  `useLastSession` (`src/hooks/`) returns the previous session's working
+  sets, its volume, and the placeholder value in one live query;
+  `ActiveExerciseBlock` calls it and hands the result down. Every row of a
+  block wants the same answer, so per-row would re-run the same reads for
+  each set on screen.
 - **A completed set is green, not accent.** The whole row takes an
   `emerald-500/15` wash and the checkmark goes solid emerald. Cyan is the
   accent used for *interactive* state app-wide, and reusing it for
@@ -417,6 +444,15 @@ old version silently breaks upgrades for anyone not starting from empty.
   `SwipeToDelete`'s sliding layer, so it composites over the row's opaque
   background instead of replacing it and letting the red panel show
   through.
+- **Analytics tab order is by how often a section is read**, not by how it
+  was built: Consistency first, then the range-driven charts, then the two
+  sections that ignore the range. `TimeRangeSelector` stays directly above
+  the first chart it governs. **Progress by Rep Count and the PR list
+  deliberately span all history**, not the selected range — a "best at 8
+  reps" scoped to 8 weeks would silently disagree with the PR list, and an
+  8-week stall window needs a longer lookback than the default range can
+  give it. Any new section that reports a *best* rather than a *trend*
+  belongs in that group.
 - **`src/lib/analytics.ts`** is the single source of truth for
   tonnage/PR/muscle-set-weighting definitions — extend it there, don't
   recompute a metric inline in a chart or card component. In particular:
@@ -438,6 +474,27 @@ old version silently breaks upgrades for anyone not starting from empty.
     — used by History card badges, `WorkoutDetailPage` per-set badges, and
     the Analytics PR List via the `usePRProgression()` hook
     (`src/hooks/`). Don't reimplement PR detection locally.
+  - `computeRepProgress` / `computeRepProgressByExercise` answer "am I
+    getting stronger at this movement?" **without e1RM** — best weight
+    actually lifted at each rep count, and the date each best was last
+    beaten. Nothing is extrapolated; every number shown is a set that was
+    performed. Three rules hold it together:
+    - `MIN_SESSIONS_FOR_REP_TREND` (4) gates any trend claim. The first
+      session is only a baseline, leaving three chances to beat it; two flat
+      sessions is a bad week, three starts to be a pattern. Below it the UI
+      says how many sessions are still needed rather than showing a verdict.
+    - A stall is judged at the **anchor** rep count — the one with the most
+      working sets (ties to the more recent) — because that's where the
+      lifter actually trains the movement, not wherever a single heavy
+      single happened to land.
+    - `dormant` is deliberately separate from `stalled`: an exercise not
+      trained inside the `STALL_WEEKS` (8) window hasn't plateaued, it was
+      dropped, and flagging it would bury the ones actually being ground on.
+  - `compareSets` is the shared "versus last time" definition behind the
+    active workout's indicators: better = more weight without losing reps,
+    or the same weight for more reps. Trading weight for reps returns
+    `mixed`, which renders as the matched dash — forcing it into up/down
+    would put a green arrow on a session the lifter wouldn't call better.
   - `useHistoryFeed.ts` and `useAnalyticsData.ts` each load their whole
     relevant tables into memory in one query (rather than one
     `useLiveQuery` per card/chart) and compute everything in JS. This only
@@ -725,7 +782,7 @@ src/
                  action sheet, swipe-to-delete, stepper, card, chip,
                  textarea)
   hooks/         cross-cutting hooks not tied to one feature (usePRProgression,
-                 useLastSessionSet, useSettings, ...)
+                 useLastSession, useSettings, ...)
   lib/           pure helper functions (units, decimal, ids, dates,
                  analytics, muscleColors, chartTheme, setTypes, viewport)
 ```

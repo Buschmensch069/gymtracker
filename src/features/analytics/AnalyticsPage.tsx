@@ -5,6 +5,7 @@ import type { AnalyticsTimeRange } from '../../lib/timeRange'
 import { ConsistencyChart } from './ConsistencyChart'
 import { ExerciseProgressSection } from './ExerciseProgressSection'
 import { PRList } from './PRList'
+import { RepProgressSection } from './RepProgressSection'
 import { TimeRangeSelector } from './TimeRangeSelector'
 import { TonnageChart } from './TonnageChart'
 import { useAnalyticsData } from './useAnalyticsData'
@@ -25,22 +26,31 @@ export function AnalyticsPage() {
       <div className="flex-1 scroll-touch px-4 py-4">
         {data === undefined ? null : (
           <div className="space-y-8 pb-4">
+            {/* The selector stays above everything it governs. Consistency
+                leads because it is the chart checked most often; the two
+                sections that ignore the range (Progress by Rep Count, and
+                Personal Records) sit further down, so the control is never
+                adjacent to something it doesn't drive. */}
             <TimeRangeSelector value={range} onChange={setRange} />
+
+            <Section title="Consistency" subtitle="Workouts per week">
+              <ConsistencyChart data={data} range={range} earliestTimestamp={earliestTimestamp} />
+            </Section>
 
             <Section title="Weekly Sets by Muscle Group" subtitle="Working sets only">
               <WeeklyMuscleSetsChart data={data} range={range} earliestTimestamp={earliestTimestamp} />
-            </Section>
-
-            <Section title="Estimated 1RM">
-              <ExerciseProgressSection data={data} unit={unit} range={range} earliestTimestamp={earliestTimestamp} />
             </Section>
 
             <Section title="Tonnage per Workout">
               <TonnageChart data={data} unit={unit} range={range} earliestTimestamp={earliestTimestamp} />
             </Section>
 
-            <Section title="Consistency" subtitle="Workouts per week">
-              <ConsistencyChart data={data} range={range} earliestTimestamp={earliestTimestamp} />
+            <Section title="Progress by Rep Count" subtitle="Best weight per rep count · all history">
+              <RepProgressSection data={data} unit={unit} />
+            </Section>
+
+            <Section title="Estimated 1RM">
+              <ExerciseProgressSection data={data} unit={unit} range={range} earliestTimestamp={earliestTimestamp} />
             </Section>
 
             <Section title="Personal Records">
